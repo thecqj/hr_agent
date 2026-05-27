@@ -1,0 +1,36 @@
+# Web框架
+fastapi
+uvicorn[standard]
+
+# 数据库
+sqlalchemy[asyncio]
+asyncpg
+pgvector
+alembic
+
+# 认证
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+email-validator
+
+# 校验
+pydantic
+pydantic-settings
+
+# AI (保留，后面会用到)
+langgraph
+langchain
+langchain-openai
+langchain-community
+langchain-core
+openai
+tiktoken
+
+# 异步任务 (保留)
+celery
+redis
+
+# 工具
+httpx
+python-dotenv
