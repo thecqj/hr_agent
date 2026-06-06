@@ -1,32 +1,32 @@
-from typing import TypedDict, Annotated, List, Dict, Any, Optional, Literal
-from langchain_core.messages import BaseMessage
-from langgraph.graph.message import add_messages
+from typing import Any, Optional, TypedDict
 
 
 class AgentState(TypedDict):
-    """单智能体对话状态"""
-    messages: Annotated[List[BaseMessage], add_messages]
+    """单智能体对话状态（占位）"""
+
+    messages: list[dict[str, Any]]
     user_role: str
     user_id: str
     current_page: str
-    context: Dict[str, Any]
-    user_profile: Optional[Dict[str, Any]]
-    next_action: Literal["continue", "respond", "end"]
-    pending_tool_calls: List[Dict[str, Any]]
+    context: dict[str, Any]
+    user_profile: Optional[dict[str, Any]]
+    next_action: str
+    pending_tool_calls: list[dict[str, Any]]
     iteration_count: int
     final_response: Optional[str]
 
 
 class MultiAgentState(TypedDict):
-    """多智能体协同状态"""
-    messages: Annotated[List[BaseMessage], add_messages]
+    """多智能体协同状态（占位）"""
+
+    messages: list[dict[str, Any]]
     user_id: str
-    job_id: str                     # 目标岗位ID
-    candidates: List[Dict[str, Any]] # 原始投递数据
-    structured_candidates: List[Dict[str, Any]] # 结构化后的简历
-    scores: List[Dict[str, float]]   # 匹配评分
-    recommendations: List[Dict]      # 推荐结果（含理由）
-    hr_decision: Optional[str]       # HR确认结果
-    next_action: str                 # supervisor的调度指令
+    job_id: str
+    candidates: list[dict[str, Any]]
+    structured_candidates: list[dict[str, Any]]
+    scores: list[dict[str, Any]]
+    recommendations: list[dict[str, Any]]
+    hr_decision: Optional[str]
+    next_action: str
     iteration_count: int
     error: Optional[str]

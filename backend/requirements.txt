@@ -1,36 +1,27 @@
-# Web框架
+# Web
 fastapi
 uvicorn[standard]
 
-# 数据库
+# Database
 sqlalchemy[asyncio]
-asyncpg
+psycopg[binary]
 pgvector
 alembic
 
-# 认证
+# Auth
 python-jose[cryptography]
-passlib[bcrypt]
+bcrypt
 python-multipart
 email-validator
 
-# 校验
+# Validation & settings
 pydantic
 pydantic-settings
-
-# AI (保留，后面会用到)
-langgraph
-langchain
-langchain-openai
-langchain-community
-langchain-core
-openai
-tiktoken
-
-# 异步任务 (保留)
-celery
-redis
-
-# 工具
-httpx
 python-dotenv
+
+# HTTP client
+httpx
+
+# Testing
+pytest
+pytest-asyncio

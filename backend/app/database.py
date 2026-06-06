@@ -1,34 +1,33 @@
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from collections.abc import AsyncGenerator
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
 from app.config import settings
-
-# 从 models 中导入 Base，确保所有模型都已注册
 from app.models.base import Base
-# 导入所有模型，确保它们被注册到 Base.metadata
-import app.models.user          # noqa: F401
-import app.models.seeker_profile  # noqa: F401
+
+# 导入所有模型，确保 metadata 完整注册
+import app.models.application  # noqa: F401
+import app.models.job  # noqa: F401
 import app.models.recruiter_profile  # noqa: F401
-import app.models.job            # noqa: F401
-import app.models.application    # noqa: F401
+import app.models.seeker_profile  # noqa: F401
+import app.models.user  # noqa: F401
 
 
-# 创建异步数据库引擎
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=settings.DEBUG,
-    pool_size=20,
-    max_overflow=10,
+    echo=settings.DATABASE_ECHO,
+    pool_pre_ping=True,
 )
 
-# 创建异步会话工厂
 async_session = async_sessionmaker(
-    engine,
+    bind=engine,
     class_=AsyncSession,
     expire_on_commit=False,
 )
 
 
-async def get_db() -> AsyncSession:
-    """依赖注入：获取数据库会话"""
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """依赖注入：请求级会话，自动提交或回滚。"""
     async with async_session() as session:
         try:
             yield session
@@ -38,13 +37,13 @@ async def get_db() -> AsyncSession:
             raise
 
 
-async def init_db():
-    """初始化数据库：创建所有表（仅开发环境使用）"""
+async def init_db() -> None:
+    """初始化数据库（仅开发调试使用）。"""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
 
-async def drop_db():
-    """删除所有表（仅开发环境使用）"""
+async def drop_db() -> None:
+    """删除数据库表（仅开发调试使用）。"""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)

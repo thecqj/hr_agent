@@ -1,21 +1,41 @@
-from passlib.context import CryptContext
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+
+import bcrypt
 from jose import JWTError, jwt
+
 from app.config import settings
 
-# 密码加密上下文
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# bcrypt 单次处理的密码上限（按 UTF-8 字节数计算）
+MAX_BCRYPT_PASSWORD_BYTES = 72
 
 
 def hash_password(password: str) -> str:
     """对密码进行哈希加密"""
-    return pwd_context.hash(password)
+    password_bytes = password.encode("utf-8")
+    if len(password_bytes) > MAX_BCRYPT_PASSWORD_BYTES:
+        raise ValueError(
+            f"password cannot be longer than {MAX_BCRYPT_PASSWORD_BYTES} bytes"
+        )
+    return bcrypt.hashpw(password_bytes, bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """验证密码是否正确"""
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        plain_password_bytes = plain_password.encode("utf-8")
+        if len(plain_password_bytes) > MAX_BCRYPT_PASSWORD_BYTES:
+            return False
+
+        hashed_password_bytes = (
+            hashed_password.encode("utf-8")
+            if isinstance(hashed_password, str)
+            else hashed_password
+        )
+        return bcrypt.checkpw(plain_password_bytes, hashed_password_bytes)
+    except (ValueError, TypeError):
+        # 兼容底层 bcrypt 在异常输入时抛错，避免 500
+        return False
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
