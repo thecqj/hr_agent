@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Any, Dict
 
 from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,7 +18,7 @@ from app.services import job_service
 router = APIRouter(prefix="/jobs", tags=["岗位"])
 
 
-def _job_to_dict(job, recruiter_name: Optional[str] = None) -> dict:
+def _job_to_dict(job: Any, recruiter_name: Optional[str] = None) -> Dict[str, Any]:
     return {
         "id": str(job.id),
         "recruiter_id": str(job.recruiter_id),
@@ -33,7 +33,7 @@ def _job_to_dict(job, recruiter_name: Optional[str] = None) -> dict:
         "created_at": job.created_at,
         "updated_at": job.updated_at,
         "recruiter_name": recruiter_name,
-        "applications_count": getattr(job, "applications_count", 0),
+        "applications_count": 0,
     }
 
 
@@ -42,7 +42,7 @@ async def create_job(
     data: JobCreateRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_required_user),
-):
+) -> JobResponse:
     job = await job_service.create_job(db, data, current_user)
     return JobResponse.model_validate(_job_to_dict(job, current_user.name))
 
@@ -59,7 +59,7 @@ async def list_jobs(
     status: Optional[str] = Query(None, description="岗位状态过滤（招聘者可用）"),
     current_user: Optional[User] = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
-):
+) -> JobListResponse:
     jobs, total = await job_service.list_jobs(
         db,
         page=page,
@@ -77,46 +77,50 @@ async def list_jobs(
         total=total,
         page=page,
         page_size=page_size,
-        items=[_job_to_dict(job) for job in jobs],
+        items=[JobResponse.model_validate(_job_to_dict(job)) for job in jobs],
     )
 
 
 @router.get("/{job_id}", response_model=JobResponse, summary="岗位详情")
 async def get_job(
-    job_id: str = Path(..., description="岗位ID"),
+    job_id: str = Path(...),
     db: AsyncSession = Depends(get_db),
-):
+) -> JobResponse:
     job = await job_service.get_job(db, job_id)
     return JobResponse.model_validate(_job_to_dict(job))
 
 
 @router.put("/{job_id}", response_model=JobResponse, summary="更新岗位")
 async def update_job(
-    job_id: str = Path(..., description="岗位ID"),
-    data: JobUpdateRequest = ...,
+    job_id: str = Path(...),
+    data: Optional[JobUpdateRequest] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_required_user),
-):
+) -> JobResponse:
+    if data is None:
+        raise ValueError("Job update data is required")
     job = await job_service.update_job(db, job_id, data, current_user)
     return JobResponse.model_validate(_job_to_dict(job, current_user.name))
 
 
 @router.delete("/{job_id}", summary="删除岗位")
 async def delete_job(
-    job_id: str = Path(..., description="岗位ID"),
+    job_id: str = Path(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_required_user),
-):
+) -> Dict[str, str]:
     await job_service.delete_job(db, job_id, current_user)
     return {"message": "岗位已删除"}
 
 
 @router.patch("/{job_id}/status", response_model=JobResponse, summary="修改岗位状态")
 async def update_job_status(
-    job_id: str = Path(..., description="岗位ID"),
-    data: JobStatusUpdateRequest = ...,
+    job_id: str = Path(...),
+    data: Optional[JobStatusUpdateRequest] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_required_user),
-):
+) -> JobResponse:
+    if data is None:
+        raise ValueError("Job status update data is required")
     job = await job_service.update_job_status(db, job_id, data, current_user)
     return JobResponse.model_validate(_job_to_dict(job, current_user.name))

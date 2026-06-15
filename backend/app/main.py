@@ -1,7 +1,9 @@
+from typing import Dict, Any
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1 import api_router
+from app.api import api_router
 from app.config import settings
 
 
@@ -24,8 +26,8 @@ app.add_middleware(
 app.include_router(api_router)
 
 
-@app.get("/")
-async def root() -> dict:
+@app.get("/", response_model=Dict[str, Any])
+async def root() -> Dict[str, Any]:
     return {
         "message": f"{settings.APP_NAME} API",
         "version": settings.APP_VERSION,
@@ -33,6 +35,6 @@ async def root() -> dict:
     }
 
 
-@app.get("/health")
-async def health_check() -> dict:
+@app.get("/health", response_model=Dict[str, str])
+async def health_check() -> Dict[str, str]:
     return {"status": "ok"}

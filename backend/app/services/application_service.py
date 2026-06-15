@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Tuple
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -44,8 +44,6 @@ async def create_application(
         existing_app.cover_letter = data.cover_letter
         existing_app.structured_resume = data.structured_resume.model_dump() if data.structured_resume else None
         existing_app.status = ApplicationStatus.PENDING
-        existing_app.match_score = None
-        existing_app.ai_suggestions = None
         await db.commit()
         await db.refresh(existing_app)
         return existing_app
@@ -56,8 +54,6 @@ async def create_application(
         resume_text=data.resume_text,
         cover_letter=data.cover_letter,
         structured_resume=data.structured_resume.model_dump() if data.structured_resume else None,
-        match_score=None,
-        ai_suggestions=None,
         status=ApplicationStatus.PENDING,
     )
     db.add(application)
@@ -73,7 +69,7 @@ async def get_applications_for_job(
     status_filter: Optional[str] = None,
     page: int = 1,
     page_size: int = 20,
-) -> tuple[list[Application], int]:
+) -> Tuple[list[Application], int]:
     """招聘者查看某个岗位的投递列表"""
     job = await db.get(Job, job_id)
     if not job:
@@ -94,7 +90,7 @@ async def get_applications_for_job(
 
     offset = (page - 1) * page_size
     page_query = query.order_by(Application.created_at.desc()).offset(offset).limit(page_size)
-    applications = (await db.execute(page_query)).scalars().all()
+    applications = list((await db.execute(page_query)).scalars().all())
     return applications, total
 
 
@@ -103,7 +99,7 @@ async def get_my_applications(
     current_user: User,
     page: int = 1,
     page_size: int = 20,
-) -> tuple[list[Application], int]:
+) -> Tuple[list[Application], int]:
     """求职者查看自己的投递记录"""
     query = select(Application).where(Application.applicant_id == current_user.id).options(selectinload(Application.applicant))
 
@@ -112,7 +108,7 @@ async def get_my_applications(
 
     offset = (page - 1) * page_size
     page_query = query.order_by(Application.created_at.desc()).offset(offset).limit(page_size)
-    applications = (await db.execute(page_query)).scalars().all()
+    applications = list((await db.execute(page_query)).scalars().all())
     return applications, total
 
 

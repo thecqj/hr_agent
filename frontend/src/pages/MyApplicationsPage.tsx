@@ -4,7 +4,6 @@ import { FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { useLogout } from "@/features/auth/hooks/useLogout";
 import { useMyApplicationsQuery } from "@/features/applications/hooks/useApplications";
 import { APPLICATION_STATUS_MAP } from "@/shared/constants/applicationStatus";
@@ -62,17 +61,10 @@ export default function MyApplicationsPage() {
                   )}
                 </CardHeader>
                 <CardContent>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-muted-foreground">匹配度</span>
-                    <span className="font-semibold">
-                      {app.match_score != null ? `${Math.round(app.match_score * 100)}%` : "未评估"}
-                    </span>
-                  </div>
-                  <Separator className="my-2" />
-                  <div className="text-sm text-muted-foreground">
+                  <p className="text-sm text-muted-foreground mb-4">
                     投递时间：{new Date(app.created_at).toLocaleDateString()}
-                  </div>
-                  <div className="mt-4 flex gap-2">
+                  </p>
+                  <div className="flex gap-2">
                     <Button
                       variant="outline"
                       size="sm"

@@ -12,7 +12,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -23,7 +22,7 @@ import {
 import { useUpdateApplicationStatusMutation, useApplicantsByJobQuery } from "@/features/applications/hooks/useApplications";
 import type { Applicant } from "@/features/applications/types/application";
 import { useLogout } from "@/features/auth/hooks/useLogout";
-import { APPLICATION_STATUS_MAP, type ApplicationStatus } from "@/shared/constants/applicationStatus";
+import { APPLICATION_STATUS_MAP } from "@/shared/constants/applicationStatus";
 import { getApiErrorMessage } from "@/shared/api/error";
 import EmptyState from "@/shared/ui/feedback/EmptyState";
 import ErrorState from "@/shared/ui/feedback/ErrorState";
@@ -45,7 +44,7 @@ export default function ApplicantsPage() {
     try {
       await updateStatusMutation.mutateAsync({
         applicantId,
-        status: newStatus as ApplicationStatus,
+        status: newStatus as any,
       });
       toast.success("状态已更新");
     } catch (err) {
@@ -63,7 +62,7 @@ export default function ApplicantsPage() {
       <RecruiterHeader onNavigate={navigate} onLogout={logout} />
 
       <main className="container mx-auto p-6">
-        <h1 className="text-3xl font-bold mb-6">投递列表</h1>
+        <h2 className="text-3xl font-bold mb-6">投递列表</h2>
 
         {isLoading ? (
           <LoadingState />
@@ -89,13 +88,6 @@ export default function ApplicantsPage() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-muted-foreground">匹配度</span>
-                    <span className="font-semibold">
-                      {app.match_score != null ? `${Math.round(app.match_score * 100)}%` : "未评估"}
-                    </span>
-                  </div>
-                  <Separator className="my-2" />
                   <div className="flex items-center gap-2">
                     <Select value={app.status} onValueChange={(v) => updateStatus(app.id, v)}>
                       <SelectTrigger className="w-32 h-8">
@@ -124,19 +116,14 @@ export default function ApplicantsPage() {
             <DialogHeader>
               <DialogTitle>{selectedApplicant?.applicant_name} 的简历</DialogTitle>
               <DialogDescription>
-                匹配度：
-                {selectedApplicant?.match_score != null
-                  ? `${Math.round(selectedApplicant.match_score * 100)}%`
-                  : "未评估"}
-                &nbsp;|&nbsp;状态：
-                {selectedApplicant ? APPLICATION_STATUS_MAP[selectedApplicant.status].label : "待查看"}
+                状态：{selectedApplicant ? APPLICATION_STATUS_MAP[selectedApplicant.status].label : "待查看"}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-6 text-sm">
               {selectedApplicant?.structured_resume ? (
                 <>
                   <div className="bg-gray-50 p-4 rounded-lg">
-                    <h4 className="font-semibold mb-3 text-base border-b pb-2">基本信息</h4>
+                    <h3 className="font-semibold mb-3 text-base border-b pb-2">基本信息</h3>
                     <div className="grid grid-cols-2 gap-y-2 gap-x-6">
                       <div>
                         <span className="font-medium">姓名：</span>
@@ -158,11 +145,11 @@ export default function ApplicantsPage() {
                   {selectedApplicant.structured_resume.contact &&
                     Object.values(selectedApplicant.structured_resume.contact).some(Boolean) && (
                       <div className="bg-gray-50 p-4 rounded-lg">
-                        <h4 className="font-semibold mb-3 text-base border-b pb-2">联系方式</h4>
+                        <h3 className="font-semibold mb-3 text-base border-b pb-2">联系方式</h3>
                         <div className="grid grid-cols-2 gap-x-6 gap-y-2">
                           {selectedApplicant.structured_resume.contact.phone && (
                             <div>
-                              <span className="font-medium">📞 电话：</span>
+                              <span className="font-medium">📱 手机：</span>
                               {selectedApplicant.structured_resume.contact.phone}
                             </div>
                           )}
@@ -190,9 +177,9 @@ export default function ApplicantsPage() {
 
                   {selectedApplicant.structured_resume.work_experience?.length > 0 && (
                     <div className="bg-gray-50 p-4 rounded-lg">
-                      <h4 className="font-semibold mb-3 text-base border-b pb-2">工作经历</h4>
-                      {selectedApplicant.structured_resume.work_experience.map((exp, idx) => (
-                        <div key={idx} className="mb-3 border-l-4 border-primary/30 pl-4">
+                      <h3 className="font-semibold mb-3 text-base border-b pb-2">工作经历</h3>
+                      {selectedApplicant.structured_resume.work_experience.map((exp, index) => (
+                        <div key={index} className="mb-3 border-l-4 border-primary/30 pl-4">
                           <p className="font-semibold">{exp.company}</p>
                           <p className="text-sm text-muted-foreground">
                             {exp.position} &nbsp;|&nbsp; {formatDate(exp.start_date)} ~
@@ -206,9 +193,9 @@ export default function ApplicantsPage() {
 
                   {selectedApplicant.structured_resume.project_experience?.length > 0 && (
                     <div className="bg-gray-50 p-4 rounded-lg">
-                      <h4 className="font-semibold mb-3 text-base border-b pb-2">项目经历</h4>
-                      {selectedApplicant.structured_resume.project_experience.map((proj, idx) => (
-                        <div key={idx} className="mb-3 border-l-4 border-primary/30 pl-4">
+                      <h3 className="font-semibold mb-3 text-base border-b pb-2">项目经历</h3>
+                      {selectedApplicant.structured_resume.project_experience.map((proj, index) => (
+                        <div key={index} className="mb-3 border-l-4 border-primary/30 pl-4">
                           <p className="font-semibold">{proj.name}</p>
                           <p className="text-sm text-muted-foreground">
                             {proj.role} &nbsp;|&nbsp; {formatDate(proj.start_date)} ~
@@ -231,12 +218,9 @@ export default function ApplicantsPage() {
 
                   {selectedApplicant.structured_resume.education?.length > 0 && (
                     <div className="bg-gray-50 p-4 rounded-lg">
-                      <h4 className="font-semibold mb-3 text-base border-b pb-2">教育经历</h4>
-                      {selectedApplicant.structured_resume.education.map((edu, idx) => (
-                        <div
-                          key={idx}
-                          className="flex justify-between items-center mb-2 border-b border-dashed pb-1"
-                        >
+                      <h3 className="font-semibold mb-3 text-base border-b pb-2">教育经历</h3>
+                      {selectedApplicant.structured_resume.education.map((edu, index) => (
+                        <div key={index} className="flex justify-between items-center mb-2 border-b border-dashed pb-1">
                           <span>
                             <span className="font-medium">{edu.school}</span> · {edu.major} · {edu.degree}
                           </span>
@@ -250,10 +234,10 @@ export default function ApplicantsPage() {
 
                   {selectedApplicant.structured_resume.certificates?.length > 0 && (
                     <div className="bg-gray-50 p-4 rounded-lg">
-                      <h4 className="font-semibold mb-3 text-base border-b pb-2">资格证书</h4>
+                      <h3 className="font-semibold mb-3 text-base border-b pb-2">资格证书</h3>
                       <div className="flex flex-wrap gap-2">
-                        {selectedApplicant.structured_resume.certificates.map((cert, idx) => (
-                          <Badge key={idx} variant="outline" className="text-sm py-1 px-3">
+                        {selectedApplicant.structured_resume.certificates.map((cert, index) => (
+                          <Badge key={index} variant="outline" className="text-sm py-1 px-3">
                             {cert.name}
                             {cert.date ? ` (${cert.date})` : ""}
                           </Badge>
@@ -264,11 +248,11 @@ export default function ApplicantsPage() {
 
                   {selectedApplicant.structured_resume.skills?.length > 0 && (
                     <div className="bg-gray-50 p-4 rounded-lg">
-                      <h4 className="font-semibold mb-3 text-base border-b pb-2">专业技能</h4>
+                      <h3 className="font-semibold mb-3 text-base border-b pb-2">专业技能</h3>
                       <div className="flex flex-wrap gap-2">
-                        {selectedApplicant.structured_resume.skills.map((skill, idx) => (
+                        {selectedApplicant.structured_resume.skills.map((skill, index) => (
                           <Badge
-                            key={idx}
+                            key={index}
                             variant="default"
                             className="bg-primary/20 text-primary-foreground hover:bg-primary/30 text-sm py-1 px-3"
                           >
@@ -281,7 +265,7 @@ export default function ApplicantsPage() {
 
                   {selectedApplicant.structured_resume.self_evaluation && (
                     <div className="bg-gray-50 p-4 rounded-lg">
-                      <h4 className="font-semibold mb-3 text-base border-b pb-2">自我评价</h4>
+                      <h3 className="font-semibold mb-3 text-base border-b pb-2">自我评价</h3>
                       <p className="whitespace-pre-wrap text-gray-700 leading-relaxed">
                         {selectedApplicant.structured_resume.self_evaluation}
                       </p>
@@ -290,7 +274,7 @@ export default function ApplicantsPage() {
                 </>
               ) : (
                 <div>
-                  <h4 className="font-semibold mb-2">简历内容（纯文本）</h4>
+                  <h3 className="font-semibold mb-2">简历内容（纯文本）</h3>
                   <p className="whitespace-pre-wrap text-sm">
                     {selectedApplicant?.resume_text || "无简历内容"}
                   </p>
@@ -299,7 +283,7 @@ export default function ApplicantsPage() {
 
               {selectedApplicant?.cover_letter && (
                 <div className="bg-gray-50 p-4 rounded-lg">
-                  <h4 className="font-semibold mb-2 text-base border-b pb-2">求职信</h4>
+                  <h3 className="font-semibold mb-2 text-base border-b pb-2">求职信</h3>
                   <p className="whitespace-pre-wrap text-sm">{selectedApplicant.cover_letter}</p>
                 </div>
               )}

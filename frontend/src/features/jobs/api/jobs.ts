@@ -22,7 +22,3 @@ export async function createJob(payload: CreateJobPayload): Promise<void> {
 export async function deleteJob(jobId: string): Promise<void> {
   await apiClient.delete(`/jobs/${jobId}`);
 }
-
-export async function evaluateJob(jobId: string): Promise<void> {
-  await apiClient.post(`/agent/evaluate/${jobId}`);
-}

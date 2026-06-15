@@ -1,11 +1,60 @@
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Any
 
 from pydantic import BaseModel, Field, field_serializer
 
 from app.models.application import ApplicationStatus
-from app.schemas.resume import StructuredResume
+
+
+class ContactInfo(BaseModel):
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    wechat: Optional[str] = None
+    other: Optional[str] = None
+
+
+class WorkExperience(BaseModel):
+    company: str
+    position: str
+    start_date: str
+    end_date: Optional[str] = None
+    description: str
+
+
+class ProjectExperience(BaseModel):
+    name: str
+    role: str
+    start_date: str
+    end_date: Optional[str] = None
+    description: str
+    technologies: list[str] = []
+
+
+class Education(BaseModel):
+    school: str
+    major: str
+    degree: str
+    start_date: str
+    end_date: Optional[str] = None
+
+
+class Certificate(BaseModel):
+    name: str
+    date: Optional[str] = None
+
+
+class StructuredResume(BaseModel):
+    name: str
+    work_experience_years: int = 0
+    education_level: Optional[str] = None
+    contact: ContactInfo = ContactInfo()
+    work_experience: list[WorkExperience] = []
+    project_experience: list[ProjectExperience] = []
+    education: list[Education] = []
+    certificates: list[Certificate] = []
+    skills: list[str] = []
+    self_evaluation: Optional[str] = None
 
 
 class ApplicationCreateRequest(BaseModel):
@@ -33,16 +82,14 @@ class ApplicationResponse(BaseModel):
     job_title: Optional[str] = None
     resume_text: str
     cover_letter: Optional[str] = None
-    match_score: Optional[float] = None
-    ai_suggestions: Optional[str] = None
-    structured_resume: Optional[dict] = None
+    structured_resume: Optional[dict[str, Any]] = None
     status: ApplicationStatus
     created_at: datetime
 
     model_config = {"from_attributes": True}
 
     @field_serializer("id", "job_id", "applicant_id")
-    def serialize_uuid(self, value: uuid.UUID | str, _info) -> str:
+    def serialize_uuid(self, value: uuid.UUID | str, _info: Any) -> str:
         return str(value)
 
 
@@ -50,4 +97,6 @@ class ApplicationListResponse(BaseModel):
     """申请列表响应"""
 
     total: int
+    page: int
+    page_size: int
     items: list[ApplicationResponse]

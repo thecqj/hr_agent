@@ -24,7 +24,6 @@ import { useAuthStore } from "@/features/auth/store/authStore";
 import { useLogout } from "@/features/auth/hooks/useLogout";
 import {
   useDeleteJobMutation,
-  useEvaluateJobMutation,
   useRecruiterJobsQuery,
   useUpdateJobStatusMutation,
 } from "@/features/jobs/hooks/useJobs";
@@ -45,7 +44,6 @@ export default function JobDashboardPage() {
   const { data: jobs = [], isLoading, isError, refetch } = useRecruiterJobsQuery(user?.id);
   const updateStatusMutation = useUpdateJobStatusMutation();
   const deleteJobMutation = useDeleteJobMutation();
-  const evaluateJobMutation = useEvaluateJobMutation();
 
   const handleStatusChange = async (jobId: string, newStatus: string) => {
     try {
@@ -67,15 +65,6 @@ export default function JobDashboardPage() {
       setDeleteTarget(null);
     } catch (err) {
       toast.error(getApiErrorMessage(err, "删除失败"));
-    }
-  };
-
-  const handleEvaluate = async (jobId: string) => {
-    try {
-      await evaluateJobMutation.mutateAsync(jobId);
-      toast.success("评估任务已启动，请稍后刷新查看结果");
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, "启动评估失败"));
     }
   };
 
@@ -135,13 +124,6 @@ export default function JobDashboardPage() {
                       onClick={() => navigate(`/dashboard/applicants/${job.id}`)}
                     >
                       查看申请
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={() => handleEvaluate(job.id)}
-                      disabled={evaluateJobMutation.isPending}
-                    >
-                      智能评估
                     </Button>
                     <Button
                       variant="destructive"

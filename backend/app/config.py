@@ -34,14 +34,5 @@ class Settings(BaseSettings):
         ]
     )
 
-    # 兼容旧配置项（当前留作占位，不参与 AI 推理）
-    REDIS_URL: str = ""
-    AGENT_MODEL: str = "placeholder"
-    AGENT_MAX_ITERATIONS: int = 3
-
-    # AI 占位策略
-    AI_PLACEHOLDER_ENABLED: bool = True
-    AI_PLACEHOLDER_MESSAGE: str = "AI 功能暂未启用，当前返回占位结果。"
-
 
 settings = Settings()

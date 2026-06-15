@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Tuple, Sequence, Dict, Any
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, or_, select
@@ -55,7 +55,7 @@ async def list_jobs(
     salary_max: Optional[int] = None,
     status: Optional[str] = None,
     current_user: Optional[User] = None,
-) -> tuple[list[Job], int]:
+) -> Tuple[list[Job], int]:
     """岗位列表（支持过滤、搜索、分页）"""
     query = select(Job)
 
@@ -98,11 +98,7 @@ async def list_jobs(
     offset = (page - 1) * page_size
     page_query = query.order_by(Job.created_at.desc()).offset(offset).limit(page_size)
     result = await db.execute(page_query)
-    jobs = result.scalars().all()
-
-    for job in jobs:
-        app_count_stmt = select(func.count()).select_from(Application).where(Application.job_id == job.id)
-        job.applications_count = (await db.execute(app_count_stmt)).scalar() or 0
+    jobs = list(result.scalars().all())
 
     return jobs, total
 

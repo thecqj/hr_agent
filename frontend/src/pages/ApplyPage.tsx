@@ -1,4 +1,4 @@
-import { type ChangeEvent, useState } from "react";
+import { useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -22,7 +22,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { useCreateApplicationMutation } from "@/features/applications/hooks/useApplications";
 import type { StructuredResume } from "@/features/applications/types/application";
 import { useLogout } from "@/features/auth/hooks/useLogout";
-import { parseResumeFile } from "@/features/resume/api/resume";
 import { getApiErrorMessage } from "@/shared/api/error";
 import SeekerHeader from "@/shared/ui/layout/SeekerHeader";
 
@@ -85,8 +84,6 @@ export default function ApplyPage() {
 
   const [step, setStep] = useState<"form" | "cover" | "confirm">("form");
   const [coverLetter, setCoverLetter] = useState("");
-  const [parsing, setParsing] = useState(false);
-
   const [showConfirm, setShowConfirm] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
@@ -138,9 +135,9 @@ export default function ApplyPage() {
 
     if (data.work_experience.length > 0) {
       lines.push("\n工作经历：");
-      data.work_experience.forEach((exp, i) => {
+      data.work_experience.forEach((exp, index) => {
         lines.push(
-          `  ${i + 1}. ${exp.company} - ${exp.position} (${exp.start_date} ~ ${exp.end_date || "至今"})`
+          `  ${index + 1}. ${exp.company} - ${exp.position} (${exp.start_date} ~ ${exp.end_date || "至今"})`
         );
         lines.push(`     ${exp.description}`);
       });
@@ -148,9 +145,9 @@ export default function ApplyPage() {
 
     if (data.project_experience.length > 0) {
       lines.push("\n项目经历：");
-      data.project_experience.forEach((proj, i) => {
+      data.project_experience.forEach((proj, index) => {
         lines.push(
-          `  ${i + 1}. ${proj.name} (${proj.role}) (${proj.start_date} ~ ${proj.end_date || "至今"})`
+          `  ${index + 1}. ${proj.name} (${proj.role}) (${proj.start_date} ~ ${proj.end_date || "至今"})`
         );
         lines.push(`     ${proj.description}`);
         if (proj.technologies.length > 0) lines.push(`     技术栈：${proj.technologies.join(", ")}`);
@@ -159,17 +156,17 @@ export default function ApplyPage() {
 
     if (data.education.length > 0) {
       lines.push("\n教育经历：");
-      data.education.forEach((edu, i) => {
+      data.education.forEach((edu, index) => {
         lines.push(
-          `  ${i + 1}. ${edu.school} - ${edu.major} (${edu.degree}) (${edu.start_date} ~ ${edu.end_date || "至今"})`
+          `  ${index + 1}. ${edu.school} - ${edu.major} (${edu.degree}) (${edu.start_date} ~ ${edu.end_date || "至今"})`
         );
       });
     }
 
     if (data.certificates.length > 0) {
       lines.push("\n资格证书：");
-      data.certificates.forEach((cert, i) => {
-        lines.push(`  ${i + 1}. ${cert.name}${cert.date ? ` (${cert.date})` : ""}`);
+      data.certificates.forEach((cert, index) => {
+        lines.push(`  ${index + 1}. ${cert.name}${cert.date ? ` (${cert.date})` : ""}`);
       });
     }
 
@@ -184,33 +181,6 @@ export default function ApplyPage() {
     }
 
     return lines.join("\n");
-  };
-
-  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setParsing(true);
-    try {
-      const data: StructuredResume = await parseResumeFile(file);
-      form.reset({
-        name: data.name || "",
-        work_experience_years: data.work_experience_years || 0,
-        education_level: data.education_level || "",
-        contact: data.contact || {},
-        work_experience: data.work_experience || [],
-        project_experience: data.project_experience || [],
-        education: data.education || [],
-        certificates: data.certificates || [],
-        skills: data.skills || [],
-        self_evaluation: data.self_evaluation || "",
-      });
-      toast.success("简历解析成功，请检查并修改");
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, "简历解析失败，请手动填写"));
-    } finally {
-      setParsing(false);
-    }
   };
 
   const handleFinalSubmit = async (force = false) => {
@@ -254,20 +224,6 @@ export default function ApplyPage() {
           <CardContent>
             {step === "form" && (
               <div className="space-y-6">
-                <div className="border-2 border-dashed rounded-lg p-8 text-center relative transition-colors border-gray-300 hover:border-primary">
-                  <p className="mt-2 text-sm text-gray-600">
-                    点击或拖拽上传简历文件（PDF、Word），支持 AI 自动解析
-                  </p>
-                  <input
-                    type="file"
-                    accept=".pdf,.docx"
-                    onChange={handleFileChange}
-                    className="absolute inset-0 opacity-0 cursor-pointer"
-                    disabled={parsing}
-                  />
-                  {parsing && <p className="text-sm text-muted-foreground mt-2">正在解析中...</p>}
-                </div>
-
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label>姓名</Label>
@@ -285,7 +241,7 @@ export default function ApplyPage() {
 
                 <fieldset className="border p-4 rounded">
                   <legend className="text-sm font-medium">联系方式</legend>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-2">
                     <div>
                       <Label>手机</Label>
                       <Input {...form.register("contact.phone")} />
@@ -416,8 +372,8 @@ export default function ApplyPage() {
                 <fieldset className="border p-4 rounded">
                   <legend className="text-sm font-medium">教育经历</legend>
                   {eduFields.map((field, index) => (
-                    <div key={field.id} className="border-b pb-4 mb-4 last:border-0 last:pb-0 last:mb-0">
-                      <div className="grid grid-cols-2 gap-4">
+                    <div key={field.id} className="flex gap-4 items-end border-b pb-4 mb-4 last:border-0 last:pb-0 last:mb-0">
+                      <div className="grid grid-cols-2 gap-4 flex-1">
                         <div>
                           <Label>学校</Label>
                           <Input {...form.register(`education.${index}.school`)} />
@@ -430,20 +386,21 @@ export default function ApplyPage() {
                           <Label>学位</Label>
                           <Input {...form.register(`education.${index}.degree`)} />
                         </div>
-                        <div>
-                          <Label>开始日期</Label>
-                          <Input type="date" {...form.register(`education.${index}.start_date`)} />
-                        </div>
-                        <div>
-                          <Label>结束日期</Label>
-                          <Input type="date" {...form.register(`education.${index}.end_date`)} />
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <Label>开始日期</Label>
+                            <Input type="date" {...form.register(`education.${index}.start_date`)} />
+                          </div>
+                          <div>
+                            <Label>结束日期</Label>
+                            <Input type="date" {...form.register(`education.${index}.end_date`)} />
+                          </div>
                         </div>
                       </div>
                       <Button
                         type="button"
                         variant="destructive"
                         size="sm"
-                        className="mt-2"
                         onClick={() => removeEdu(index)}
                       >
                         删除

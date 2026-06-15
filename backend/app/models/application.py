@@ -1,9 +1,14 @@
 import enum
-from sqlalchemy import Column, String, Text, Float, Enum, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
+import uuid
+from datetime import datetime
+from typing import Optional, Any, TYPE_CHECKING
+
+from sqlalchemy import String, Text, Enum, ForeignKey
+from sqlalchemy.orm import relationship, Mapped, mapped_column
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+
 from app.models.base import Base, TimestampMixin
-from sqlalchemy.dialects.postgresql import JSONB
+
 
 class ApplicationStatus(str, enum.Enum):
     PENDING = "pending"        # 待查看
@@ -15,32 +20,36 @@ class ApplicationStatus(str, enum.Enum):
 
 class Application(Base, TimestampMixin):
     __tablename__ = "applications"
-    
-    job_id = Column(
+
+    job_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("jobs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    applicant_id = Column(
+    applicant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    resume_text = Column(Text, nullable=False)         # 投递时的简历快照
-    cover_letter = Column(Text, nullable=True)         # 求职信
-    match_score = Column(Float, nullable=True)         # 智能匹配度 0-1
-    ai_suggestions = Column(Text, nullable=True)       # AI 优化建议
-    structured_resume = Column(JSONB, nullable=True)  # 结构化简历数据
-    status = Column(
+    resume_text: Mapped[str] = mapped_column(Text, nullable=False)
+    cover_letter: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    structured_resume: Mapped[Optional[Any]] = mapped_column(JSONB, nullable=True)
+    status: Mapped[ApplicationStatus] = mapped_column(
         Enum(ApplicationStatus),
         default=ApplicationStatus.PENDING,
     )
-    
+
     # 关联
-    job = relationship("Job", back_populates="applications")
-    applicant = relationship("User", back_populates="applications", foreign_keys=[applicant_id])
-    
-    def __repr__(self):
+    job: Mapped["Job"] = relationship("Job", back_populates="applications")
+    applicant: Mapped["User"] = relationship("User", back_populates="applications", foreign_keys=[applicant_id])
+
+    def __repr__(self) -> str:
         return f"<Application job={self.job_id} applicant={self.applicant_id}>"
+
+
+# 处理循环引用
+if TYPE_CHECKING:
+    from app.models.job import Job
+    from app.models.user import User

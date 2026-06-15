@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Any
 
 from pydantic import BaseModel, Field, field_serializer
 
@@ -56,7 +56,7 @@ class JobResponse(BaseModel):
     model_config = {"from_attributes": True}
 
     @field_serializer("id", "recruiter_id")
-    def serialize_uuid(self, value: uuid.UUID | str, _info) -> str:
+    def serialize_uuid(self, value: uuid.UUID | str, _info: Any) -> str:
         return str(value)
 
 

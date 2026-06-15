@@ -1,3 +1,5 @@
+from typing import Optional, Dict, Any
+
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +18,7 @@ from app.utils.security import (
 )
 
 
-async def register_user(db: AsyncSession, data: UserRegisterRequest) -> dict:
+async def register_user(db: AsyncSession, data: UserRegisterRequest) -> Dict[str, Any]:
     """用户注册"""
     result = await db.execute(select(User).where(User.email == data.email))
     existing_user = result.scalar_one_or_none()
@@ -37,7 +39,7 @@ async def register_user(db: AsyncSession, data: UserRegisterRequest) -> dict:
     await db.flush()
 
     if data.role == UserRole.JOB_SEEKER:
-        profile = SeekerProfile(user_id=user.id)
+        profile: Any = SeekerProfile(user_id=user.id)
     else:
         profile = RecruiterProfile(user_id=user.id)
 
@@ -65,7 +67,7 @@ async def register_user(db: AsyncSession, data: UserRegisterRequest) -> dict:
     }
 
 
-async def login_user(db: AsyncSession, email: str, password: str) -> dict:
+async def login_user(db: AsyncSession, email: str, password: str) -> Dict[str, Any]:
     """用户登录"""
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
@@ -102,7 +104,7 @@ async def login_user(db: AsyncSession, email: str, password: str) -> dict:
     }
 
 
-async def refresh_access_token(db: AsyncSession, refresh_token: str) -> dict:
+async def refresh_access_token(db: AsyncSession, refresh_token: str) -> Dict[str, Any]:
     """刷新访问令牌"""
     payload = decode_token(refresh_token)
     if not payload or payload.get("type") != "refresh":

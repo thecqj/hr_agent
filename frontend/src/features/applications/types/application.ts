@@ -56,7 +56,6 @@ export interface Applicant {
   resume_text: string;
   cover_letter?: string;
   structured_resume?: StructuredResume;
-  match_score: number | null;
   status: ApplicationStatus;
 }
 
@@ -67,7 +66,6 @@ export interface MyApplication {
   company_name?: string;
   resume_text: string;
   cover_letter?: string;
-  match_score: number | null;
   status: ApplicationStatus;
   created_at: string;
 }

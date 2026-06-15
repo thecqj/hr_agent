@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { createJob, deleteJob, evaluateJob, getJobById, getJobs, updateJobStatus } from "@/features/jobs/api/jobs";
+import { createJob, deleteJob, getJobById, getJobs, updateJobStatus } from "@/features/jobs/api/jobs";
 import type { CreateJobPayload, Job, JobListParams, JobStatus } from "@/features/jobs/types/job";
 import { queryKeys } from "@/shared/constants/queryKeys";
 
@@ -63,11 +63,5 @@ export function useDeleteJobMutation() {
       queryClient.invalidateQueries({ queryKey: queryKeys.jobs.all });
       queryClient.removeQueries({ queryKey: queryKeys.jobs.detail(jobId) });
     },
-  });
-}
-
-export function useEvaluateJobMutation() {
-  return useMutation({
-    mutationFn: (jobId: string) => evaluateJob(jobId),
   });
 }
