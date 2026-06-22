@@ -1,88 +1,283 @@
-import uuid
-from types import SimpleNamespace
-
-from app.api.deps import get_optional_user, get_required_user
-from app.main import app
-from app.models.job import JobStatus, WorkType
+import pytest
+from httpx import AsyncClient
 
 
-def _mock_job(recruiter_id=None):
-    return SimpleNamespace(
-        id=uuid.uuid4(),
-        recruiter_id=recruiter_id or uuid.uuid4(),
-        title="Python后端",
-        description="负责后端开发",
-        salary_min=15,
-        salary_max=25,
-        location="上海",
-        work_type=WorkType.ONSITE,
-        skills_required=["Python", "FastAPI"],
-        status=JobStatus.ACTIVE,
-        created_at="2026-01-01T00:00:00",
-        updated_at="2026-01-01T00:00:00",
-        applications_count=0,
-    )
-
-
-def test_jobs_endpoints(client, recruiter_user, monkeypatch):
-    from app.api.v1 import jobs as jobs_api
-
-    async def _create(_db, _data, user):
-        return _mock_job(recruiter_id=user.id)
-
-    async def _list(*args, **kwargs):
-        return [_mock_job()], 1
-
-    async def _get(_db, _job_id):
-        return _mock_job()
-
-    async def _update(_db, _job_id, _data, user):
-        return _mock_job(recruiter_id=user.id)
-
-    async def _delete(_db, _job_id, _user):
-        return None
-
-    async def _update_status(_db, _job_id, _data, user):
-        return _mock_job(recruiter_id=user.id)
-
-    monkeypatch.setattr(jobs_api.job_service, "create_job", _create)
-    monkeypatch.setattr(jobs_api.job_service, "list_jobs", _list)
-    monkeypatch.setattr(jobs_api.job_service, "get_job", _get)
-    monkeypatch.setattr(jobs_api.job_service, "update_job", _update)
-    monkeypatch.setattr(jobs_api.job_service, "delete_job", _delete)
-    monkeypatch.setattr(jobs_api.job_service, "update_job_status", _update_status)
-
-    app.dependency_overrides[get_required_user] = lambda: recruiter_user
-    app.dependency_overrides[get_optional_user] = lambda: recruiter_user
-
-    create_resp = client.post(
+@pytest.mark.asyncio
+async def test_create_job_as_recruiter(
+    client: AsyncClient, auth_headers_recruiter: dict[str, str]
+) -> None:
+    """招聘者创建职位成功"""
+    resp = await client.post(
         "/api/v1/jobs/",
         json={
-            "title": "Python后端",
+            "title": "Python 开发工程师",
             "description": "负责后端开发",
             "salary_min": 15,
-            "salary_max": 25,
-            "location": "上海",
+            "salary_max": 30,
+            "location": "北京",
             "work_type": "onsite",
             "skills_required": ["Python", "FastAPI"],
         },
+        headers=auth_headers_recruiter,
     )
-    assert create_resp.status_code == 201
-    assert create_resp.json()["title"] == "Python后端"
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["title"] == "Python 开发工程师"
+    assert data["status"] == "active"
+    assert data["skills_required"] == ["Python", "FastAPI"]
 
-    list_resp = client.get("/api/v1/jobs/")
-    assert list_resp.status_code == 200
-    assert list_resp.json()["total"] == 1
 
-    detail_resp = client.get("/api/v1/jobs/some-job-id")
-    assert detail_resp.status_code == 200
+@pytest.mark.asyncio
+async def test_create_job_as_seeker_forbidden(
+    client: AsyncClient, auth_headers_seeker: dict[str, str]
+) -> None:
+    """求职者创建职位失败"""
+    resp = await client.post(
+        "/api/v1/jobs/",
+        json={
+            "title": "不应该创建",
+            "description": "测试",
+            "work_type": "onsite",
+        },
+        headers=auth_headers_seeker,
+    )
+    assert resp.status_code == 403
 
-    update_resp = client.put("/api/v1/jobs/some-job-id", json={"title": "新标题"})
-    assert update_resp.status_code == 200
 
-    status_resp = client.patch("/api/v1/jobs/some-job-id/status", json={"status": "active"})
-    assert status_resp.status_code == 200
+@pytest.mark.asyncio
+async def test_list_jobs_default_filter(
+    client: AsyncClient, auth_headers_recruiter: dict[str, str]
+) -> None:
+    """列出职位 — 默认只返回 active"""
+    # 创建一个 active 职位
+    await client.post(
+        "/api/v1/jobs/",
+        json={"title": "Active Job", "description": "desc", "work_type": "onsite"},
+        headers=auth_headers_recruiter,
+    )
+    # 创建后关闭一个
+    create_resp = await client.post(
+        "/api/v1/jobs/",
+        json={"title": "To Close", "description": "desc", "work_type": "onsite"},
+        headers=auth_headers_recruiter,
+    )
+    job_id = create_resp.json()["id"]
+    await client.patch(
+        f"/api/v1/jobs/{job_id}/status",
+        json={"status": "closed"},
+        headers=auth_headers_recruiter,
+    )
 
-    delete_resp = client.delete("/api/v1/jobs/some-job-id")
-    assert delete_resp.status_code == 200
-    assert "message" in delete_resp.json()
+    resp = await client.get("/api/v1/jobs/", headers=auth_headers_recruiter)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] >= 1
+    # 默认只返回 active
+    for item in data["items"]:
+        assert item["status"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_list_jobs_keyword_search(
+    client: AsyncClient, auth_headers_recruiter: dict[str, str]
+) -> None:
+    """列出职位 — 关键词搜索"""
+    await client.post(
+        "/api/v1/jobs/",
+        json={"title": "Go 开发", "description": "云原生开发", "work_type": "remote"},
+        headers=auth_headers_recruiter,
+    )
+    await client.post(
+        "/api/v1/jobs/",
+        json={"title": "Java 开发", "description": "企业级应用", "work_type": "onsite"},
+        headers=auth_headers_recruiter,
+    )
+
+    resp = await client.get(
+        "/api/v1/jobs/", params={"keyword": "Go"}, headers=auth_headers_recruiter
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] >= 1
+    for item in data["items"]:
+        assert "Go" in item["title"] or "Go" in item["description"]
+
+
+@pytest.mark.asyncio
+async def test_list_jobs_salary_filter(
+    client: AsyncClient, auth_headers_recruiter: dict[str, str]
+) -> None:
+    """列出职位 — 薪资范围过滤"""
+    await client.post(
+        "/api/v1/jobs/",
+        json={
+            "title": "高薪岗位",
+            "description": "desc",
+            "salary_min": 30,
+            "salary_max": 50,
+            "work_type": "onsite",
+        },
+        headers=auth_headers_recruiter,
+    )
+
+    resp = await client.get(
+        "/api/v1/jobs/",
+        params={"salary_min": 25, "salary_max": 55},
+        headers=auth_headers_recruiter,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    for item in data["items"]:
+        # 岗位 salary_max >= 过滤 salary_min 且 岗位 salary_min <= 过滤 salary_max
+        if item["salary_min"] is not None and item["salary_max"] is not None:
+            assert item["salary_max"] >= 25
+            assert item["salary_min"] <= 55
+
+
+@pytest.mark.asyncio
+async def test_get_job_detail(
+    client: AsyncClient, auth_headers_recruiter: dict[str, str]
+) -> None:
+    """获取单个职位"""
+    create_resp = await client.post(
+        "/api/v1/jobs/",
+        json={"title": "详情测试", "description": "详情desc", "work_type": "hybrid"},
+        headers=auth_headers_recruiter,
+    )
+    job_id = create_resp.json()["id"]
+
+    resp = await client.get(f"/api/v1/jobs/{job_id}")
+    assert resp.status_code == 200
+    assert resp.json()["title"] == "详情测试"
+    assert resp.json()["work_type"] == "hybrid"
+
+
+@pytest.mark.asyncio
+async def test_get_job_not_found(client: AsyncClient) -> None:
+    """获取不存在的职位"""
+    resp = await client.get("/api/v1/jobs/00000000-0000-0000-0000-000000000000")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_own_job(
+    client: AsyncClient, auth_headers_recruiter: dict[str, str]
+) -> None:
+    """招聘者更新自己的职位"""
+    create_resp = await client.post(
+        "/api/v1/jobs/",
+        json={"title": "更新前", "description": "desc", "work_type": "onsite"},
+        headers=auth_headers_recruiter,
+    )
+    job_id = create_resp.json()["id"]
+
+    resp = await client.put(
+        f"/api/v1/jobs/{job_id}",
+        json={"title": "更新后"},
+        headers=auth_headers_recruiter,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["title"] == "更新后"
+
+
+@pytest.mark.asyncio
+async def test_update_other_job_forbidden(
+    client: AsyncClient, auth_headers_recruiter: dict[str, str]
+) -> None:
+    """更新他人职位失败"""
+    # 先用 recruiter 创建一个职位
+    create_resp = await client.post(
+        "/api/v1/jobs/",
+        json={"title": "别人的", "description": "desc", "work_type": "onsite"},
+        headers=auth_headers_recruiter,
+    )
+    job_id = create_resp.json()["id"]
+
+    # 注册另一个招聘者尝试更新
+    reg_resp = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "other_recruiter@test.com",
+            "password": "testpass123",
+            "name": "其他招聘者",
+            "role": "recruiter",
+        },
+    )
+    other_token = reg_resp.json()["access_token"]
+    other_headers = {"Authorization": f"Bearer {other_token}"}
+
+    resp = await client.put(
+        f"/api/v1/jobs/{job_id}",
+        json={"title": "篡改"},
+        headers=other_headers,
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_delete_own_job(
+    client: AsyncClient, auth_headers_recruiter: dict[str, str]
+) -> None:
+    """删除自己的职位"""
+    create_resp = await client.post(
+        "/api/v1/jobs/",
+        json={"title": "待删除", "description": "desc", "work_type": "onsite"},
+        headers=auth_headers_recruiter,
+    )
+    job_id = create_resp.json()["id"]
+
+    resp = await client.delete(f"/api/v1/jobs/{job_id}", headers=auth_headers_recruiter)
+    assert resp.status_code == 200
+
+    # 确认已删除
+    get_resp = await client.get(f"/api/v1/jobs/{job_id}")
+    assert get_resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_other_job_forbidden(
+    client: AsyncClient, auth_headers_recruiter: dict[str, str]
+) -> None:
+    """删除他人职位失败"""
+    create_resp = await client.post(
+        "/api/v1/jobs/",
+        json={"title": "不可删", "description": "desc", "work_type": "onsite"},
+        headers=auth_headers_recruiter,
+    )
+    job_id = create_resp.json()["id"]
+
+    # 注册另一个招聘者
+    reg_resp = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "deleter@test.com",
+            "password": "testpass123",
+            "name": "删除者",
+            "role": "recruiter",
+        },
+    )
+    other_headers = {"Authorization": f"Bearer {reg_resp.json()['access_token']}"}
+
+    resp = await client.delete(f"/api/v1/jobs/{job_id}", headers=other_headers)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_update_job_status(
+    client: AsyncClient, auth_headers_recruiter: dict[str, str]
+) -> None:
+    """更新职位状态"""
+    create_resp = await client.post(
+        "/api/v1/jobs/",
+        json={"title": "状态测试", "description": "desc", "work_type": "onsite"},
+        headers=auth_headers_recruiter,
+    )
+    job_id = create_resp.json()["id"]
+
+    resp = await client.patch(
+        f"/api/v1/jobs/{job_id}/status",
+        json={"status": "closed"},
+        headers=auth_headers_recruiter,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "closed"
