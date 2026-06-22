@@ -25,3 +25,5 @@ httpx
 # Testing
 pytest
 pytest-asyncio
+
+mypy
