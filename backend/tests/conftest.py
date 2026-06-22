@@ -10,9 +10,8 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from app.config import settings
 from app.database import get_db
-from app.main import app
+from app.main import app as fastapi_app
 from app.models.base import Base
 
 # 导入所有模型，确保 metadata 完整注册
@@ -67,18 +66,11 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     async def _override_get_db() -> AsyncGenerator[AsyncSession, None]:
         yield db_session
 
-    app.dependency_overrides[get_db] = _override_get_db
-    transport = ASGITransport(app=app)
+    fastapi_app.dependency_overrides[get_db] = _override_get_db
+    transport = ASGITransport(app=fastapi_app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
-    app.dependency_overrides.clear()
-
-
-def _register_and_get_headers(client: AsyncClient, email: str, role: str) -> dict[str, str]:
-    """同步辅助：注册用户并返回 Bearer headers（在测试中 await 调用）"""
-    # 这个辅助不能是 async fixture，因为它需要 client 参数
-    # 实际注册逻辑在下面的 async fixtures 中
-    return {}
+    fastapi_app.dependency_overrides.clear()
 
 
 @pytest_asyncio.fixture
