@@ -1,85 +1,198 @@
-def test_register_login_refresh_and_me(client, seeker_user, monkeypatch):
-    from app.api.v1 import auth as auth_api
-    from app.main import app
+import pytest
+from httpx import AsyncClient
 
-    async def _register(_db, _data):
-        return {
-            "access_token": "a",
-            "refresh_token": "r",
-            "token_type": "bearer",
-            "expires_in": 1800,
-            "user": {
-                "id": str(seeker_user.id),
-                "email": seeker_user.email,
-                "name": seeker_user.name,
-                "role": seeker_user.role.value,
-                "phone": seeker_user.phone,
-                "avatar_url": seeker_user.avatar_url,
-                "is_active": True,
-            },
-        }
 
-    async def _login(_db, _email, _password):
-        return {
-            "access_token": "a2",
-            "refresh_token": "r2",
-            "token_type": "bearer",
-            "expires_in": 1800,
-            "user": {
-                "id": str(seeker_user.id),
-                "email": seeker_user.email,
-                "name": seeker_user.name,
-                "role": seeker_user.role.value,
-                "phone": seeker_user.phone,
-                "avatar_url": seeker_user.avatar_url,
-                "is_active": True,
-            },
-        }
-
-    async def _refresh(_db, _token):
-        return {
-            "access_token": "a3",
-            "refresh_token": "r3",
-            "token_type": "bearer",
-            "expires_in": 1800,
-        }
-
-    monkeypatch.setattr(auth_api.auth_service, "register_user", _register)
-    monkeypatch.setattr(auth_api.auth_service, "login_user", _login)
-    monkeypatch.setattr(auth_api.auth_service, "refresh_access_token", _refresh)
-
-    register_resp = client.post(
+@pytest.mark.asyncio
+async def test_register_seeker(client: AsyncClient) -> None:
+    """注册求职者成功"""
+    resp = await client.post(
         "/api/v1/auth/register",
         json={
-            "email": "seeker@example.com",
-            "password": "123456",
-            "name": "Seeker",
+            "email": "seeker_new@test.com",
+            "password": "testpass123",
+            "name": "新求职者",
             "role": "job_seeker",
-            "phone": None,
         },
     )
-    assert register_resp.status_code == 200
-    assert register_resp.json()["user"]["email"] == "seeker@example.com"
+    assert resp.status_code == 201
+    data = resp.json()
+    assert "access_token" in data
+    assert "refresh_token" in data
+    assert data["token_type"] == "bearer"
+    assert data["user"]["role"] == "job_seeker"
+    assert data["user"]["email"] == "seeker_new@test.com"
 
-    login_resp = client.post(
-        "/api/v1/auth/login",
-        json={"email": "seeker@example.com", "password": "123456"},
+
+@pytest.mark.asyncio
+async def test_register_recruiter(client: AsyncClient) -> None:
+    """注册招聘者成功"""
+    resp = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "recruiter_new@test.com",
+            "password": "testpass123",
+            "name": "新招聘者",
+            "role": "recruiter",
+        },
     )
-    assert login_resp.status_code == 200
-    assert login_resp.json()["access_token"] == "a2"
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["user"]["role"] == "recruiter"
+    assert data["user"]["email"] == "recruiter_new@test.com"
 
-    refresh_resp = client.post("/api/v1/auth/refresh", json={"refresh_token": "token"})
-    assert refresh_resp.status_code == 200
-    assert refresh_resp.json()["access_token"] == "a3"
 
-    from app.api.deps import get_required_user
+@pytest.mark.asyncio
+async def test_register_duplicate_email(client: AsyncClient) -> None:
+    """重复邮箱注册失败"""
+    payload = {
+        "email": "dup@test.com",
+        "password": "testpass123",
+        "name": "重复用户",
+        "role": "job_seeker",
+    }
+    resp1 = await client.post("/api/v1/auth/register", json=payload)
+    assert resp1.status_code == 201
 
-    app.dependency_overrides[get_required_user] = lambda: seeker_user
+    resp2 = await client.post("/api/v1/auth/register", json=payload)
+    assert resp2.status_code == 409
 
-    me_resp = client.get("/api/v1/auth/me")
-    assert me_resp.status_code == 200
-    assert me_resp.json()["role"] == "job_seeker"
 
-    logout_resp = client.post("/api/v1/auth/logout")
-    assert logout_resp.status_code == 200
-    assert "message" in logout_resp.json()
+@pytest.mark.asyncio
+async def test_login_success(client: AsyncClient) -> None:
+    """登录成功"""
+    # 先注册
+    await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "login@test.com",
+            "password": "testpass123",
+            "name": "登录用户",
+            "role": "job_seeker",
+        },
+    )
+    # 再登录
+    resp = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "login@test.com", "password": "testpass123"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "access_token" in data
+    assert "refresh_token" in data
+    assert data["user"]["email"] == "login@test.com"
+
+
+@pytest.mark.asyncio
+async def test_login_wrong_password(client: AsyncClient) -> None:
+    """登录密码错误"""
+    await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "wrongpw@test.com",
+            "password": "testpass123",
+            "name": "密码测试",
+            "role": "job_seeker",
+        },
+    )
+    resp = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "wrongpw@test.com", "password": "wrongpassword"},
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_login_nonexistent_user(client: AsyncClient) -> None:
+    """登录不存在的用户"""
+    resp = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "nobody@test.com", "password": "testpass123"},
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_refresh_token_success(client: AsyncClient) -> None:
+    """刷新 token 成功"""
+    reg_resp = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "refresh@test.com",
+            "password": "testpass123",
+            "name": "刷新测试",
+            "role": "job_seeker",
+        },
+    )
+    refresh_token = reg_resp.json()["refresh_token"]
+
+    resp = await client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": refresh_token},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "access_token" in data
+    assert "refresh_token" in data
+
+
+@pytest.mark.asyncio
+async def test_refresh_token_invalid(client: AsyncClient) -> None:
+    """刷新 token 无效"""
+    resp = await client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": "invalid.token.here"},
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_get_me_success(client: AsyncClient) -> None:
+    """获取当前用户信息"""
+    reg_resp = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "me@test.com",
+            "password": "testpass123",
+            "name": "我的信息",
+            "role": "job_seeker",
+        },
+    )
+    token = reg_resp.json()["access_token"]
+
+    resp = await client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["email"] == "me@test.com"
+    assert data["name"] == "我的信息"
+
+
+@pytest.mark.asyncio
+async def test_get_me_unauthorized(client: AsyncClient) -> None:
+    """未登录访问 /me"""
+    resp = await client.get("/api/v1/auth/me")
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_logout_success(client: AsyncClient) -> None:
+    """登出成功"""
+    reg_resp = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "logout@test.com",
+            "password": "testpass123",
+            "name": "登出用户",
+            "role": "job_seeker",
+        },
+    )
+    token = reg_resp.json()["access_token"]
+
+    resp = await client.post(
+        "/api/v1/auth/logout",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert "message" in resp.json()

@@ -25,10 +25,12 @@ import app.models.user  # noqa: F401
 TEST_DATABASE_URL: str = "postgresql+psycopg://app:password@localhost:5432/jobboard_test"
 
 
-@pytest.fixture(scope="session")
-def engine() -> AsyncEngine:
-    """连接测试库的 async engine"""
-    return create_async_engine(TEST_DATABASE_URL, echo=False)
+@pytest_asyncio.fixture(scope="session")
+async def engine() -> AsyncGenerator[AsyncEngine, None]:
+    """连接测试库的 async engine，session 结束后关闭"""
+    eng = create_async_engine(TEST_DATABASE_URL, echo=False)
+    yield eng
+    await eng.dispose()
 
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
@@ -43,20 +45,33 @@ async def db_tables(engine: AsyncEngine) -> AsyncGenerator[None, None]:
 
 @pytest_asyncio.fixture
 async def db_session(engine: AsyncEngine) -> AsyncGenerator[AsyncSession, None]:
-    """function 级：每个测试用事务回滚隔离"""
-    connection = await engine.connect()
-    transaction = await connection.begin()
+    """function 级：每个测试用事务回滚隔离
 
-    session_maker = async_sessionmaker(
-        bind=connection,
-        class_=AsyncSession,
-        expire_on_commit=False,
-    )
-    async with session_maker() as session:
-        yield session
+    使用 begin_nested() 创建 savepoint，使得服务层调用 db.commit()
+    时仅释放 savepoint 而非提交真实事务，保证测试隔离。
+    """
+    async with engine.connect() as connection:
+        transaction = await connection.begin()
+        nested = await connection.begin_nested()
 
-    await transaction.rollback()
-    await connection.close()
+        session_maker = async_sessionmaker(
+            bind=connection,
+            class_=AsyncSession,
+            expire_on_commit=False,
+        )
+        async with session_maker() as session:
+            # 每次 session.commit() 后自动重新开启 savepoint
+            from sqlalchemy import event
+
+            @event.listens_for(session.sync_session, "after_commit")
+            def _restart_savepoint(sync_session: object) -> None:
+                nonlocal nested
+                if transaction.is_active and not nested.is_active:
+                    nested = connection.sync_connection.begin_nested()
+
+            yield session
+
+        await transaction.rollback()
 
 
 @pytest_asyncio.fixture
