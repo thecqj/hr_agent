@@ -21,9 +21,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useCreateApplicationMutation } from "@/features/applications/hooks/useApplications";
 import type { StructuredResume } from "@/features/applications/types/application";
-import { useLogout } from "@/features/auth/hooks/useLogout";
 import { getApiErrorMessage } from "@/shared/api/error";
-import SeekerHeader from "@/shared/ui/layout/SeekerHeader";
 
 const contactSchema = z.object({
   phone: z.string().optional(),
@@ -80,7 +78,6 @@ type StructuredResumeForm = z.infer<typeof structuredResumeSchema>;
 export default function ApplyPage() {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
-  const logout = useLogout();
 
   const [step, setStep] = useState<"form" | "cover" | "confirm">("form");
   const [coverLetter, setCoverLetter] = useState("");
@@ -213,11 +210,8 @@ export default function ApplyPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <SeekerHeader onNavigate={navigate} onLogout={logout} />
-
-      <main className="container mx-auto p-6 max-w-4xl">
-        <Card>
+    <main className="container mx-auto p-6 max-w-4xl">
+      <Card>
           <CardHeader>
             <CardTitle>投递岗位</CardTitle>
           </CardHeader>
@@ -552,7 +546,6 @@ export default function ApplyPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </main>
-    </div>
+    </main>
   );
 }

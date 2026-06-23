@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -21,18 +21,14 @@ import {
 } from "@/components/ui/select";
 import { useUpdateApplicationStatusMutation, useApplicantsByJobQuery } from "@/features/applications/hooks/useApplications";
 import type { Applicant } from "@/features/applications/types/application";
-import { useLogout } from "@/features/auth/hooks/useLogout";
 import { APPLICATION_STATUS_MAP } from "@/shared/constants/applicationStatus";
 import { getApiErrorMessage } from "@/shared/api/error";
 import EmptyState from "@/shared/ui/feedback/EmptyState";
 import ErrorState from "@/shared/ui/feedback/ErrorState";
 import LoadingState from "@/shared/ui/feedback/LoadingState";
-import RecruiterHeader from "@/shared/ui/layout/RecruiterHeader";
 
 export default function ApplicantsPage() {
   const { jobId } = useParams<{ jobId: string }>();
-  const navigate = useNavigate();
-  const logout = useLogout();
 
   const [selectedApplicant, setSelectedApplicant] = useState<Applicant | null>(null);
 
@@ -58,11 +54,8 @@ export default function ApplicantsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <RecruiterHeader onNavigate={navigate} onLogout={logout} />
-
-      <main className="container mx-auto p-6">
-        <h2 className="text-3xl font-bold mb-6">投递列表</h2>
+    <main className="container mx-auto p-6">
+      <h2 className="text-3xl font-bold mb-6">投递列表</h2>
 
         {isLoading ? (
           <LoadingState />
@@ -291,6 +284,5 @@ export default function ApplicantsPage() {
           </DialogContent>
         </Dialog>
       </main>
-    </div>
   );
 }

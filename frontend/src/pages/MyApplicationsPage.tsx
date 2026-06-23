@@ -4,27 +4,21 @@ import { FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useLogout } from "@/features/auth/hooks/useLogout";
 import { useMyApplicationsQuery } from "@/features/applications/hooks/useApplications";
 import { APPLICATION_STATUS_MAP } from "@/shared/constants/applicationStatus";
 import EmptyState from "@/shared/ui/feedback/EmptyState";
 import ErrorState from "@/shared/ui/feedback/ErrorState";
 import LoadingState from "@/shared/ui/feedback/LoadingState";
-import SeekerHeader from "@/shared/ui/layout/SeekerHeader";
 
 export default function MyApplicationsPage() {
   const navigate = useNavigate();
-  const logout = useLogout();
 
   const { data, isLoading, isError, refetch } = useMyApplicationsQuery();
   const applications = data?.items ?? [];
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <SeekerHeader onNavigate={navigate} onLogout={logout} />
-
-      <main className="container mx-auto p-6">
-        <div className="flex items-center gap-2 mb-6">
+    <main className="container mx-auto p-6">
+      <div className="flex items-center gap-2 mb-6">
           <FileText className="w-6 h-6" />
           <h2 className="text-3xl font-bold">我的投递</h2>
         </div>
@@ -79,6 +73,5 @@ export default function MyApplicationsPage() {
           </div>
         )}
       </main>
-    </div>
   );
 }

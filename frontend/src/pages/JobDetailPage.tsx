@@ -13,20 +13,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { useLogout } from "@/features/auth/hooks/useLogout";
 import { useAuthStore } from "@/features/auth/store/authStore";
 import { useJobDetailQuery, useUpdateJobStatusMutation } from "@/features/jobs/hooks/useJobs";
 import type { JobStatus } from "@/features/jobs/types/job";
 import { getApiErrorMessage } from "@/shared/api/error";
 import ErrorState from "@/shared/ui/feedback/ErrorState";
 import LoadingState from "@/shared/ui/feedback/LoadingState";
-import RecruiterHeader from "@/shared/ui/layout/RecruiterHeader";
-import SeekerHeader from "@/shared/ui/layout/SeekerHeader";
 
 export default function JobDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const logout = useLogout();
   const { user } = useAuthStore();
   const isRecruiter = user?.role === "recruiter";
   const fallbackPath = isRecruiter ? "/dashboard" : "/jobs";
@@ -58,15 +54,8 @@ export default function JobDetailPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {isRecruiter ? (
-        <RecruiterHeader onNavigate={navigate} onLogout={logout} />
-      ) : (
-        <SeekerHeader onNavigate={navigate} onLogout={logout} />
-      )}
-
-      <main className="container mx-auto p-6">
-        <div className="mb-4 flex flex-wrap items-center gap-2">
+    <main className="container mx-auto p-6">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
           <Button variant="ghost" size="sm" className="-ml-2" onClick={handleBack}>
             <ArrowLeft className="mr-1 h-4 w-4" />
             返回上一页
@@ -136,6 +125,5 @@ export default function JobDetailPage() {
           </Card>
         )}
       </main>
-    </div>
   );
 }

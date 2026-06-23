@@ -16,10 +16,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { useLogout } from "@/features/auth/hooks/useLogout";
 import { useCreateJobMutation } from "@/features/jobs/hooks/useJobs";
 import { getApiErrorMessage } from "@/shared/api/error";
-import RecruiterHeader from "@/shared/ui/layout/RecruiterHeader";
 
 const jobSchema = z.object({
   title: z.string().min(1, "标题不能为空"),
@@ -35,7 +33,6 @@ type JobForm = z.infer<typeof jobSchema>;
 
 export default function PostJobPage() {
   const navigate = useNavigate();
-  const logout = useLogout();
   const createJobMutation = useCreateJobMutation();
 
   const { register, handleSubmit, formState, setValue } = useForm<JobForm>({
@@ -63,11 +60,8 @@ export default function PostJobPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <RecruiterHeader onNavigate={navigate} onLogout={logout} />
-
-      <main className="container mx-auto p-6 max-w-2xl">
-        <Card>
+    <main className="container mx-auto p-6 max-w-2xl">
+      <Card>
           <CardHeader>
             <CardTitle>发布新岗位</CardTitle>
           </CardHeader>
@@ -130,6 +124,5 @@ export default function PostJobPage() {
           </CardContent>
         </Card>
       </main>
-    </div>
   );
 }

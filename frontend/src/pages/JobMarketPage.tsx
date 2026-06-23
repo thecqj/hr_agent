@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,17 +13,13 @@ import {
 } from "@/components/ui/select";
 import type { WorkType } from "@/features/jobs/types/job";
 import { useJobsQuery } from "@/features/jobs/hooks/useJobs";
-import { useLogout } from "@/features/auth/hooks/useLogout";
 import ErrorState from "@/shared/ui/feedback/ErrorState";
 import EmptyState from "@/shared/ui/feedback/EmptyState";
 import LoadingState from "@/shared/ui/feedback/LoadingState";
-import SeekerHeader from "@/shared/ui/layout/SeekerHeader";
 
 export default function JobMarketPage() {
   const [keyword, setKeyword] = useState("");
   const [workType, setWorkType] = useState<string>("all");
-  const navigate = useNavigate();
-  const logout = useLogout();
 
   const params = {
     ...(keyword ? { keyword } : {}),
@@ -34,11 +30,8 @@ export default function JobMarketPage() {
   const jobs = data?.items ?? [];
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <SeekerHeader onNavigate={navigate} onLogout={logout} />
-
-      <main className="container mx-auto p-6">
-        <h1 className="text-3xl font-bold mb-6">岗位市场</h1>
+    <main className="container mx-auto p-6">
+      <h1 className="text-3xl font-bold mb-6">岗位市场</h1>
 
         <div className="flex flex-col sm:flex-row gap-4 mb-6">
           <div className="flex-1">
@@ -107,6 +100,5 @@ export default function JobMarketPage() {
           </div>
         )}
       </main>
-    </div>
   );
 }

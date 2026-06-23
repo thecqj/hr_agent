@@ -21,7 +21,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuthStore } from "@/features/auth/store/authStore";
-import { useLogout } from "@/features/auth/hooks/useLogout";
 import {
   useDeleteJobMutation,
   useRecruiterJobsQuery,
@@ -32,14 +31,12 @@ import { getApiErrorMessage } from "@/shared/api/error";
 import EmptyState from "@/shared/ui/feedback/EmptyState";
 import ErrorState from "@/shared/ui/feedback/ErrorState";
 import LoadingState from "@/shared/ui/feedback/LoadingState";
-import RecruiterHeader from "@/shared/ui/layout/RecruiterHeader";
 
 export default function JobDashboardPage() {
   const [deleteTarget, setDeleteTarget] = useState<Job | null>(null);
   const navigate = useNavigate();
 
   const { user } = useAuthStore();
-  const logout = useLogout();
 
   const { data: jobs = [], isLoading, isError, refetch } = useRecruiterJobsQuery(user?.id);
   const updateStatusMutation = useUpdateJobStatusMutation();
@@ -69,11 +66,8 @@ export default function JobDashboardPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <RecruiterHeader onNavigate={navigate} onLogout={logout} />
-
-      <main className="container mx-auto p-6">
-        {isLoading ? (
+    <main className="container mx-auto p-6">
+      {isLoading ? (
           <LoadingState />
         ) : isError ? (
           <ErrorState message="获取岗位列表失败" onRetry={refetch} />
@@ -138,7 +132,6 @@ export default function JobDashboardPage() {
             ))}
           </div>
         )}
-      </main>
 
       <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
         <DialogContent>
@@ -162,6 +155,6 @@ export default function JobDashboardPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </main>
   );
 }

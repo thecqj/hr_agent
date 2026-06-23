@@ -9,6 +9,8 @@ import JobMarketPage from "@/pages/JobMarketPage";
 import LoginPage from "@/pages/LoginPage";
 import MyApplicationsPage from "@/pages/MyApplicationsPage";
 import PostJobPage from "@/pages/PostJobPage";
+import RecruiterLayout from "@/shared/ui/layout/RecruiterLayout";
+import SeekerLayout from "@/shared/ui/layout/SeekerLayout";
 
 function ProtectedRoute({
   children,
@@ -21,7 +23,7 @@ function ProtectedRoute({
   const user = useAuthStore((s) => s.user);
 
   if (!hydrated) {
-    return <div className="flex justify-center py-20 text-gray-500">加载中...</div>;
+    return <div className="flex justify-center py-20 text-muted-foreground">加载中...</div>;
   }
 
   if (!user) return <Navigate to="/login" replace />;
@@ -34,50 +36,56 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/jobs" element={<JobMarketPage />} />
-        <Route path="/jobs/:id" element={<JobDetailPage />} />
 
-        <Route
-          path="/apply/:jobId"
-          element={
-            <ProtectedRoute role="job_seeker">
-              <ApplyPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/my-applications"
-          element={
-            <ProtectedRoute role="job_seeker">
-              <MyApplicationsPage />
-            </ProtectedRoute>
-          }
-        />
+        {/* Seeker routes — top-bar layout */}
+        <Route element={<SeekerLayout />}>
+          <Route path="/jobs" element={<JobMarketPage />} />
+          <Route path="/jobs/:id" element={<JobDetailPage />} />
+          <Route
+            path="/apply/:jobId"
+            element={
+              <ProtectedRoute role="job_seeker">
+                <ApplyPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/my-applications"
+            element={
+              <ProtectedRoute role="job_seeker">
+                <MyApplicationsPage />
+              </ProtectedRoute>
+            }
+          />
+        </Route>
 
-        <Route
-          path="/dashboard"
-          element={
-            <ProtectedRoute role="recruiter">
-              <JobDashboardPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/dashboard/post"
-          element={
-            <ProtectedRoute role="recruiter">
-              <PostJobPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/dashboard/applicants/:jobId"
-          element={
-            <ProtectedRoute role="recruiter">
-              <ApplicantsPage />
-            </ProtectedRoute>
-          }
-        />
+        {/* Recruiter routes — sidebar layout */}
+        <Route element={<RecruiterLayout />}>
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute role="recruiter">
+                <JobDashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dashboard/post"
+            element={
+              <ProtectedRoute role="recruiter">
+                <PostJobPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dashboard/applicants/:jobId"
+            element={
+              <ProtectedRoute role="recruiter">
+                <ApplicantsPage />
+              </ProtectedRoute>
+            }
+          />
+        </Route>
 
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
