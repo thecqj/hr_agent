@@ -54,7 +54,7 @@ export default function JobDetailPage() {
   };
 
   return (
-    <main className="container mx-auto p-6">
+    <main>
       <div className="mb-4 flex flex-wrap items-center gap-2">
           <Button variant="ghost" size="sm" className="-ml-2" onClick={handleBack}>
             <ArrowLeft className="mr-1 h-4 w-4" />

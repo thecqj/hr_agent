@@ -17,7 +17,7 @@ export default function MyApplicationsPage() {
   const applications = data?.items ?? [];
 
   return (
-    <main className="container mx-auto p-6">
+    <main>
       <div className="flex items-center gap-2 mb-6">
           <FileText className="w-6 h-6" />
           <h2 className="text-3xl font-bold">我的投递</h2>

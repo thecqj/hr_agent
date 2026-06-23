@@ -54,7 +54,7 @@ export default function ApplicantsPage() {
   };
 
   return (
-    <main className="container mx-auto p-6">
+    <main>
       <h2 className="text-3xl font-bold mb-6">投递列表</h2>
 
         {isLoading ? (

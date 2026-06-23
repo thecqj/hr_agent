@@ -66,7 +66,7 @@ export default function JobDashboardPage() {
   };
 
   return (
-    <main className="container mx-auto p-6">
+    <main>
       {isLoading ? (
           <LoadingState />
         ) : isError ? (

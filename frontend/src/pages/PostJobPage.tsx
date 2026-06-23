@@ -60,7 +60,7 @@ export default function PostJobPage() {
   };
 
   return (
-    <main className="container mx-auto p-6 max-w-2xl">
+    <main className="max-w-2xl">
       <Card>
           <CardHeader>
             <CardTitle>发布新岗位</CardTitle>

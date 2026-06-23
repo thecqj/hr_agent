@@ -30,7 +30,7 @@ export default function JobMarketPage() {
   const jobs = data?.items ?? [];
 
   return (
-    <main className="container mx-auto p-6">
+    <main>
       <h1 className="text-3xl font-bold mb-6">岗位市场</h1>
 
         <div className="flex flex-col sm:flex-row gap-4 mb-6">

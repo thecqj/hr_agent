@@ -210,7 +210,7 @@ export default function ApplyPage() {
   };
 
   return (
-    <main className="container mx-auto p-6 max-w-4xl">
+    <main className="max-w-4xl">
       <Card>
           <CardHeader>
             <CardTitle>投递岗位</CardTitle>
