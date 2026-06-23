@@ -6,8 +6,14 @@ export async function createApplication(payload: CreateApplicationPayload, force
   await apiClient.post("/applications/", payload, { params: { force } });
 }
 
-export async function getMyApplications(): Promise<PaginatedResponse<MyApplication>> {
-  const res = await apiClient.get<PaginatedResponse<MyApplication>>("/applications/my");
+interface ApplicationListParams {
+  page?: number;
+  page_size?: number;
+  status?: ApplicationStatus;
+}
+
+export async function getMyApplications(params: ApplicationListParams = {}): Promise<PaginatedResponse<MyApplication>> {
+  const res = await apiClient.get<PaginatedResponse<MyApplication>>("/applications/my", { params });
   return res.data;
 }
 

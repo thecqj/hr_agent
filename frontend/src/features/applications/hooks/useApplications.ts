@@ -10,10 +10,16 @@ import type { CreateApplicationPayload } from "@/features/applications/types/app
 import type { ApplicationStatus } from "@/shared/constants/applicationStatus";
 import { queryKeys } from "@/shared/constants/queryKeys";
 
-export function useMyApplicationsQuery() {
+interface MyApplicationsParams {
+  page?: number;
+  page_size?: number;
+  status?: ApplicationStatus;
+}
+
+export function useMyApplicationsQuery(params: MyApplicationsParams = {}) {
   return useQuery({
-    queryKey: queryKeys.applications.mine,
-    queryFn: getMyApplications,
+    queryKey: queryKeys.applications.mine(params),
+    queryFn: () => getMyApplications(params),
   });
 }
 
@@ -32,7 +38,7 @@ export function useCreateApplicationMutation() {
     mutationFn: ({ payload, force }: { payload: CreateApplicationPayload; force?: boolean }) =>
       createApplication(payload, force),
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.applications.mine });
+      queryClient.invalidateQueries({ queryKey: ["applications", "mine"] });
       if (variables.payload.job_id) {
         queryClient.invalidateQueries({ queryKey: queryKeys.applications.byJob(variables.payload.job_id) });
       }
@@ -50,7 +56,7 @@ export function useUpdateApplicationStatusMutation(jobId?: string) {
       if (jobId) {
         queryClient.invalidateQueries({ queryKey: queryKeys.applications.byJob(jobId) });
       }
-      queryClient.invalidateQueries({ queryKey: queryKeys.applications.mine });
+      queryClient.invalidateQueries({ queryKey: ["applications", "mine"] });
     },
   });
 }

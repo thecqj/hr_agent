@@ -31,6 +31,8 @@ export interface JobListParams {
   keyword?: string;
   work_type?: WorkType;
   status?: JobStatus | "all";
+  page?: number;
+  page_size?: number;
 }
 
 export interface CreateJobPayload {

@@ -1,7 +1,16 @@
+import { Fragment } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Briefcase } from "lucide-react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -13,17 +22,19 @@ import { Separator } from "@/components/ui/separator";
 import { useAuthStore } from "@/features/auth/store/authStore";
 import { useLogout } from "@/features/auth/hooks/useLogout";
 import { cn } from "@/lib/utils";
+import { BreadcrumbProvider, useBreadcrumb } from "./breadcrumb-context";
 
 const NAV_ITEMS = [
   { label: "岗位市场", path: "/jobs" },
   { label: "我的投递", path: "/my-applications" },
 ] as const;
 
-export default function SeekerLayout() {
+function SeekerLayoutInner() {
   const navigate = useNavigate();
   const location = useLocation();
   const logout = useLogout();
   const user = useAuthStore((s) => s.user);
+  const { items: breadcrumbItems } = useBreadcrumb();
 
   const isActive = (path: string) =>
     location.pathname === path || location.pathname.startsWith(path + "/");
@@ -82,8 +93,41 @@ export default function SeekerLayout() {
         </div>
       </header>
       <main className="max-w-7xl mx-auto py-8 px-6">
+        {breadcrumbItems.length > 0 && (
+          <div className="mb-4">
+            <Breadcrumb>
+              <BreadcrumbList>
+                {breadcrumbItems.map((item, i) => (
+                  <Fragment key={i}>
+                    {i > 0 && <BreadcrumbSeparator />}
+                    <BreadcrumbItem>
+                      {item.href ? (
+                        <BreadcrumbLink
+                          onClick={() => navigate(item.href!)}
+                          className="cursor-pointer"
+                        >
+                          {item.label}
+                        </BreadcrumbLink>
+                      ) : (
+                        <BreadcrumbPage>{item.label}</BreadcrumbPage>
+                      )}
+                    </BreadcrumbItem>
+                  </Fragment>
+                ))}
+              </BreadcrumbList>
+            </Breadcrumb>
+          </div>
+        )}
         <Outlet />
       </main>
     </div>
+  );
+}
+
+export default function SeekerLayout() {
+  return (
+    <BreadcrumbProvider>
+      <SeekerLayoutInner />
+    </BreadcrumbProvider>
   );
 }

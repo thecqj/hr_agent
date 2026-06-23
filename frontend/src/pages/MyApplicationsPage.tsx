@@ -1,77 +1,102 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FileText } from "lucide-react";
+import { Briefcase } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useMyApplicationsQuery } from "@/features/applications/hooks/useApplications";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import type { ApplicationStatus } from "@/shared/constants/applicationStatus";
 import { APPLICATION_STATUS_MAP } from "@/shared/constants/applicationStatus";
+import { useMyApplicationsQuery } from "@/features/applications/hooks/useApplications";
+import { useBreadcrumb } from "@/shared/ui/layout/breadcrumb-context";
+import { CategoryTabs } from "@/shared/ui/CategoryTabs";
 import EmptyState from "@/shared/ui/feedback/EmptyState";
 import ErrorState from "@/shared/ui/feedback/ErrorState";
-import LoadingState from "@/shared/ui/feedback/LoadingState";
+import { StatusBadge } from "@/shared/ui/StatusBadge";
+
+const STATUS_CATEGORIES = [
+  { key: "all" as const, label: "全部" },
+  ...Object.entries(APPLICATION_STATUS_MAP).map(([key, val]) => ({
+    key: key as ApplicationStatus,
+    label: val.label,
+  })),
+];
 
 export default function MyApplicationsPage() {
   const navigate = useNavigate();
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const { setItems: setBreadcrumbItems } = useBreadcrumb();
 
-  const { data, isLoading, isError, refetch } = useMyApplicationsQuery();
+  useEffect(() => {
+    setBreadcrumbItems([{ label: "我的投递" }]);
+  }, [setBreadcrumbItems]);
+
+  const params = {
+    ...(statusFilter !== "all" ? { status: statusFilter as ApplicationStatus } : {}),
+  };
+
+  const { data, isLoading, isError, refetch } = useMyApplicationsQuery(params);
   const applications = data?.items ?? [];
 
   return (
-    <main>
-      <div className="flex items-center gap-2 mb-6">
-          <FileText className="w-6 h-6" />
-          <h2 className="text-3xl font-bold">我的投递</h2>
-        </div>
+    <div>
+      <h1 className="text-2xl font-bold mb-6">我的投递</h1>
 
-        {isLoading ? (
-          <LoadingState />
-        ) : isError ? (
-          <ErrorState message="获取投递记录失败" onRetry={refetch} />
-        ) : applications.length === 0 ? (
-          <div className="text-center py-20">
-            <EmptyState message="你还没有投递过简历" />
-            <Button className="mt-4" onClick={() => navigate("/jobs")}>
-              去看看岗位
-            </Button>
-          </div>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {applications.map((app) => (
-              <Card key={app.id} className="hover:shadow-lg">
-                <CardHeader>
-                  <div className="flex justify-between items-start">
-                    <CardTitle
-                      className="text-lg cursor-pointer hover:underline"
+      {/* Status filter tabs */}
+      <div className="mb-6">
+        <CategoryTabs
+          categories={STATUS_CATEGORIES}
+          activeKey={statusFilter}
+          onSelect={setStatusFilter}
+        />
+      </div>
+
+      {/* Content */}
+      {isLoading ? (
+        <div className="space-y-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-24 w-full rounded-lg" />
+          ))}
+        </div>
+      ) : isError ? (
+        <ErrorState message="获取投递记录失败" onRetry={refetch} />
+      ) : applications.length === 0 ? (
+        <EmptyState
+          icon={Briefcase}
+          message="暂无投递记录"
+          action={{ label: "去看看岗位", onClick: () => navigate("/jobs") }}
+        />
+      ) : (
+        <div className="space-y-4">
+          {applications.map((app) => (
+            <Card
+              key={app.id}
+              className="hover:shadow-md transition-shadow duration-200"
+            >
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 min-w-0">
+                    <h3
+                      className="text-lg font-semibold cursor-pointer hover:text-primary transition-colors truncate"
                       onClick={() => navigate(`/jobs/${app.job_id}`)}
                     >
                       {app.job_title}
-                    </CardTitle>
-                    <Badge variant={APPLICATION_STATUS_MAP[app.status].variant}>
-                      {APPLICATION_STATUS_MAP[app.status].label}
-                    </Badge>
+                    </h3>
+                    {app.company_name && (
+                      <p className="text-sm text-muted-foreground mt-1">{app.company_name}</p>
+                    )}
+                    <p className="text-xs text-muted-foreground mt-2">
+                      投递时间：{new Date(app.created_at).toLocaleDateString()}
+                    </p>
                   </div>
-                  {app.company_name && (
-                    <p className="text-sm text-muted-foreground mt-1">{app.company_name}</p>
-                  )}
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    投递时间：{new Date(app.created_at).toLocaleDateString()}
-                  </p>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => navigate(`/jobs/${app.job_id}`)}
-                    >
-                      查看岗位
-                    </Button>
+                  <div className="ml-4 shrink-0">
+                    <StatusBadge status={app.status} />
                   </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
-      </main>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

@@ -1,3 +1,16 @@
-export default function LoadingState({ message = "加载中..." }: { message?: string }) {
-  return <div className="text-center py-8 text-muted-foreground">{message}</div>;
+import { Skeleton } from "@/components/ui/skeleton";
+
+interface LoadingStateProps {
+  message?: string;
+  rows?: number;
+}
+
+export default function LoadingState({ rows = 3 }: LoadingStateProps) {
+  return (
+    <div className="space-y-4">
+      {Array.from({ length: rows }).map((_, i) => (
+        <Skeleton key={i} className="h-24 w-full rounded-lg" />
+      ))}
+    </div>
+  );
 }

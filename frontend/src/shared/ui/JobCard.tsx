@@ -1,45 +1,57 @@
-import { Card, CardContent } from "@/components/ui/card";
+import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import type { Job } from "@/features/jobs/types/job";
+
+const WORK_TYPE_LABELS: Record<string, string> = {
+  remote: "远程",
+  onsite: "现场",
+  hybrid: "混合",
+};
 
 interface JobCardProps {
   job: Job;
-  onClick?: () => void;
 }
 
-export function JobCard({ job, onClick }: JobCardProps) {
+export function JobCard({ job }: JobCardProps) {
   const hasSalary = job.salary_min != null || job.salary_max != null;
   const locationParts = [job.recruiter_name, job.location].filter(Boolean);
 
   return (
-    <Card
-      className="shadow-sm hover:shadow-md transition-shadow duration-200 cursor-pointer"
-      onClick={onClick}
-    >
-      <CardContent className="p-6">
-        <h3 className="text-lg font-semibold">{job.title}</h3>
-        {locationParts.length > 0 && (
+    <Link to={`/jobs/${job.id}`} className="block hover:no-underline">
+      <Card className="h-full shadow-sm hover:shadow-md transition-shadow duration-200">
+        <CardContent className="p-6">
+          <h3 className="text-lg font-semibold">{job.title}</h3>
           <p className="text-sm text-muted-foreground mt-1">
             {locationParts.join(" · ")}
+            {job.work_type && ` · ${WORK_TYPE_LABELS[job.work_type] ?? job.work_type}`}
           </p>
-        )}
-        {hasSalary && (
-          <p className="text-primary font-bold mt-2">
-            {job.salary_min != null ? `${job.salary_min}k` : ""}
-            {job.salary_min != null && job.salary_max != null ? " - " : ""}
-            {job.salary_max != null ? `${job.salary_max}k` : ""}
-          </p>
-        )}
-        {job.skills_required.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-3">
-            {job.skills_required.map((skill) => (
-              <Badge key={skill} variant="secondary">
-                {skill}
-              </Badge>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+          {hasSalary && (
+            <p className="text-primary font-bold mt-2">
+              {job.salary_min != null ? `${job.salary_min}k` : ""}
+              {job.salary_min != null && job.salary_max != null ? " - " : ""}
+              {job.salary_max != null ? `${job.salary_max}k` : ""}
+            </p>
+          )}
+          {job.skills_required.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-3">
+              {job.skills_required.slice(0, 3).map((skill) => (
+                <Badge key={skill} variant="secondary">
+                  {skill}
+                </Badge>
+              ))}
+              {job.skills_required.length > 3 && (
+                <Badge variant="outline">+{job.skills_required.length - 3}</Badge>
+              )}
+            </div>
+          )}
+          {job.description && (
+            <p className="text-sm text-muted-foreground mt-3 line-clamp-2">
+              {job.description}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+    </Link>
   );
 }

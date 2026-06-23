@@ -6,7 +6,7 @@ export const queryKeys = {
     recruiterList: (recruiterId?: string) => ["jobs", "recruiter", recruiterId ?? ""] as const,
   },
   applications: {
-    mine: ["applications", "mine"] as const,
+    mine: (params?: object) => ["applications", "mine", params ?? {}] as const,
     byJob: (jobId: string) => ["applications", "job", jobId] as const,
   },
 };

@@ -26,6 +26,7 @@ import { getApiErrorMessage } from "@/shared/api/error";
 import EmptyState from "@/shared/ui/feedback/EmptyState";
 import ErrorState from "@/shared/ui/feedback/ErrorState";
 import LoadingState from "@/shared/ui/feedback/LoadingState";
+import { StatusBadge } from "@/shared/ui/StatusBadge";
 
 export default function ApplicantsPage() {
   const { jobId } = useParams<{ jobId: string }>();
@@ -75,9 +76,7 @@ export default function ApplicantsPage() {
                     >
                       {app.applicant_name}
                     </CardTitle>
-                    <Badge variant={APPLICATION_STATUS_MAP[app.status].variant}>
-                      {APPLICATION_STATUS_MAP[app.status].label}
-                    </Badge>
+                    <StatusBadge status={app.status} />
                   </div>
                 </CardHeader>
                 <CardContent>

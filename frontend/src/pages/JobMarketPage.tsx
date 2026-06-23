@@ -1,104 +1,154 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Briefcase } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { WorkType } from "@/features/jobs/types/job";
 import { useJobsQuery } from "@/features/jobs/hooks/useJobs";
-import ErrorState from "@/shared/ui/feedback/ErrorState";
+import { useBreadcrumb } from "@/shared/ui/layout/breadcrumb-context";
+import { CategoryTabs } from "@/shared/ui/CategoryTabs";
 import EmptyState from "@/shared/ui/feedback/EmptyState";
-import LoadingState from "@/shared/ui/feedback/LoadingState";
+import ErrorState from "@/shared/ui/feedback/ErrorState";
+import { JobCard } from "@/shared/ui/JobCard";
+import { SearchBar } from "@/shared/ui/SearchBar";
+
+const WORK_TYPE_CATEGORIES: { key: string; label: string }[] = [
+  { key: "all", label: "全部" },
+  { key: "remote", label: "远程" },
+  { key: "onsite", label: "现场" },
+  { key: "hybrid", label: "混合" },
+];
+
+const PAGE_SIZE = 9;
 
 export default function JobMarketPage() {
   const [keyword, setKeyword] = useState("");
+  const [searchInput, setSearchInput] = useState("");
   const [workType, setWorkType] = useState<string>("all");
+  const [page, setPage] = useState(1);
+  const { setItems: setBreadcrumbItems } = useBreadcrumb();
+
+  useEffect(() => {
+    setBreadcrumbItems([{ label: "岗位市场" }]);
+  }, [setBreadcrumbItems]);
 
   const params = {
     ...(keyword ? { keyword } : {}),
     ...(workType !== "all" ? { work_type: workType as WorkType } : {}),
+    page,
+    page_size: PAGE_SIZE,
   };
 
   const { data, isLoading, isError, refetch } = useJobsQuery(params);
   const jobs = data?.items ?? [];
+  const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 0;
+
+  const handleSearch = () => {
+    setKeyword(searchInput);
+    setPage(1);
+  };
+
+  const handleWorkTypeChange = (key: string) => {
+    setWorkType(key);
+    setPage(1);
+  };
 
   return (
-    <main>
-      <h1 className="text-3xl font-bold mb-6">岗位市场</h1>
+    <div>
+      <h1 className="text-2xl font-bold mb-6">岗位市场</h1>
 
-        <div className="flex flex-col sm:flex-row gap-4 mb-6">
-          <div className="flex-1">
-            <Input
-              placeholder="搜索岗位名称或描述..."
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-            />
-          </div>
-          <div className="w-40">
-            <Select value={workType} onValueChange={(v) => setWorkType(v)}>
-              <SelectTrigger>
-                <SelectValue placeholder="工作类型" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部</SelectItem>
-                <SelectItem value="remote">远程</SelectItem>
-                <SelectItem value="onsite">现场</SelectItem>
-                <SelectItem value="hybrid">混合</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+      {/* Search bar */}
+      <div className="mb-4">
+        <SearchBar
+          value={searchInput}
+          onChange={setSearchInput}
+          onSearch={handleSearch}
+          placeholder="搜索岗位名称或描述..."
+        />
+      </div>
+
+      {/* Category filter tabs */}
+      <div className="mb-6">
+        <CategoryTabs
+          categories={WORK_TYPE_CATEGORIES}
+          activeKey={workType}
+          onSelect={handleWorkTypeChange}
+        />
+      </div>
+
+      {/* Content */}
+      {isLoading ? (
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="space-y-3">
+              <Skeleton className="h-40 w-full rounded-lg" />
+            </div>
+          ))}
         </div>
-
-        {isLoading ? (
-          <LoadingState />
-        ) : isError ? (
-          <ErrorState message="获取岗位列表失败" onRetry={refetch} />
-        ) : jobs.length === 0 ? (
-          <EmptyState message="暂无岗位" />
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      ) : isError ? (
+        <ErrorState message="获取岗位列表失败" onRetry={refetch} />
+      ) : jobs.length === 0 ? (
+        <EmptyState
+          icon={Briefcase}
+          message="暂无匹配岗位"
+          action={{ label: "清除筛选", onClick: () => { setWorkType("all"); setKeyword(""); setSearchInput(""); setPage(1); } }}
+        />
+      ) : (
+        <>
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {jobs.map((job) => (
-              <Link to={`/jobs/${job.id}`} key={job.id} className="block hover:no-underline">
-                <Card className="h-full hover:shadow-lg transition-shadow">
-                  <CardHeader>
-                    <CardTitle className="text-xl">{job.title}</CardTitle>
-                    <div className="text-sm text-muted-foreground">
-                      {job.location && `${job.location} · `}
-                      {job.work_type}
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex flex-wrap gap-1 mb-3">
-                      {job.skills_required?.slice(0, 3).map((skill) => (
-                        <Badge key={skill} variant="secondary">
-                          {skill}
-                        </Badge>
-                      ))}
-                      {job.skills_required?.length > 3 && (
-                        <Badge variant="outline">+{job.skills_required.length - 3}</Badge>
-                      )}
-                    </div>
-                    <p className="text-sm line-clamp-3">{job.description}</p>
-                    {(job.salary_min || job.salary_max) && (
-                      <p className="text-sm mt-2 font-medium">
-                        {job.salary_min && `${job.salary_min}K`}
-                        {job.salary_min && job.salary_max && " - "}
-                        {job.salary_max && `${job.salary_max}K`}
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
-              </Link>
+              <JobCard key={job.id} job={job} />
             ))}
           </div>
-        )}
-      </main>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="mt-8">
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      text="上一页"
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      className={page <= 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                    />
+                  </PaginationItem>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter((p) => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
+                    .map((p, i, arr) => (
+                      <PaginationItem key={p}>
+                        {i > 0 && arr[i - 1] < p - 1 && (
+                          <span className="px-1 text-muted-foreground">...</span>
+                        )}
+                        <PaginationLink
+                          isActive={p === page}
+                          onClick={() => setPage(p)}
+                          className="cursor-pointer"
+                        >
+                          {p}
+                        </PaginationLink>
+                      </PaginationItem>
+                    ))}
+                  <PaginationItem>
+                    <PaginationNext
+                      text="下一页"
+                      onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                      className={page >= totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          )}
+        </>
+      )}
+    </div>
   );
 }

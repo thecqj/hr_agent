@@ -1,13 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import axios from "axios";
+import { Plus, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -18,14 +19,24 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { useJobDetailQuery } from "@/features/jobs/hooks/useJobs";
 import { useCreateApplicationMutation } from "@/features/applications/hooks/useApplications";
-import type { StructuredResume } from "@/features/applications/types/application";
 import { getApiErrorMessage } from "@/shared/api/error";
+import { useBreadcrumb } from "@/shared/ui/layout/breadcrumb-context";
+import { StepForm } from "@/shared/ui/StepForm";
+
+const STEPS = [
+  { label: "基本信息" },
+  { label: "工作经历" },
+  { label: "项目经历" },
+  { label: "教育与技能" },
+];
 
 const contactSchema = z.object({
   phone: z.string().optional(),
-  email: z.string().email().optional(),
+  email: z.string().email("请输入有效的邮箱地址").optional().or(z.literal("")),
   wechat: z.string().optional(),
   other: z.string().optional(),
 });
@@ -62,7 +73,7 @@ const certificateSchema = z.object({
 
 const structuredResumeSchema = z.object({
   name: z.string().min(1, "姓名必填"),
-  work_experience_years: z.number().min(0),
+  work_experience_years: z.number().min(0, "请输入有效的工作年限"),
   education_level: z.string().optional(),
   contact: contactSchema,
   work_experience: z.array(workExpSchema),
@@ -79,12 +90,28 @@ export default function ApplyPage() {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
 
-  const [step, setStep] = useState<"form" | "cover" | "confirm">("form");
-  const [coverLetter, setCoverLetter] = useState("");
+  const [currentStep, setCurrentStep] = useState(0);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
   const createApplicationMutation = useCreateApplicationMutation();
+  const { data: job } = useJobDetailQuery(jobId);
+  const { setItems: setBreadcrumbItems } = useBreadcrumb();
+
+  useEffect(() => {
+    if (job) {
+      setBreadcrumbItems([
+        { label: "岗位市场", href: "/jobs" },
+        { label: job.title, href: `/jobs/${jobId}` },
+        { label: "投递简历" },
+      ]);
+    } else {
+      setBreadcrumbItems([
+        { label: "岗位市场", href: "/jobs" },
+        { label: "投递简历" },
+      ]);
+    }
+  }, [job, jobId, setBreadcrumbItems]);
 
   const form = useForm<StructuredResumeForm>({
     resolver: zodResolver(structuredResumeSchema),
@@ -181,6 +208,10 @@ export default function ApplyPage() {
   };
 
   const handleFinalSubmit = async (force = false) => {
+    if (!jobId) {
+      toast.error("岗位信息缺失");
+      return;
+    }
     const formData = form.getValues();
     const fullResumeText = buildFullResumeText(formData);
 
@@ -190,7 +221,6 @@ export default function ApplyPage() {
           job_id: jobId,
           resume_text: fullResumeText,
           structured_resume: formData,
-          cover_letter: coverLetter || undefined,
         },
         force,
       });
@@ -209,343 +239,396 @@ export default function ApplyPage() {
     await handleFinalSubmit(true);
   };
 
+  const handleNext = async () => {
+    // Validate only the fields relevant to current step before advancing
+    let valid = true;
+    if (currentStep === 0) {
+      valid = await form.trigger(["name", "work_experience_years", "contact"]);
+    } else if (currentStep === 1) {
+      valid = await form.trigger("work_experience");
+    } else if (currentStep === 2) {
+      valid = await form.trigger("project_experience");
+    }
+    if (valid) {
+      setCurrentStep((s) => Math.min(s + 1, STEPS.length - 1));
+    }
+  };
+
+  const handlePrev = () => {
+    setCurrentStep((s) => Math.max(s - 1, 0));
+  };
+
+  const handleSubmit = async () => {
+    const valid = await form.trigger();
+    if (valid) {
+      await handleFinalSubmit(false);
+    }
+  };
+
   return (
-    <main className="max-w-4xl">
-      <Card>
-          <CardHeader>
-            <CardTitle>投递岗位</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {step === "form" && (
-              <div className="space-y-6">
+    <div className="max-w-3xl mx-auto">
+      {/* Job title header */}
+      {job && (
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold">投递简历</h1>
+          <p className="text-muted-foreground mt-1">
+            应聘岗位：<span className="text-foreground font-medium">{job.title}</span>
+          </p>
+        </div>
+      )}
+
+      {/* Step indicator */}
+      <StepForm steps={STEPS} currentStep={currentStep} />
+
+      {/* Step content */}
+      <Card className="shadow-sm hover:shadow-md transition-shadow duration-200">
+        <CardContent className="p-6">
+          {/* Step 0: Basic Info */}
+          {currentStep === 0 && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-lg font-semibold mb-4">基本信息</h2>
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>姓名</Label>
-                    <Input {...form.register("name")} />
+                  <div className="space-y-2">
+                    <Label>姓名 <span className="text-destructive">*</span></Label>
+                    <Input {...form.register("name")} placeholder="请输入姓名" />
+                    {form.formState.errors.name && (
+                      <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
+                    )}
                   </div>
-                  <div>
-                    <Label>工作年限</Label>
-                    <Input type="number" {...form.register("work_experience_years", { valueAsNumber: true })} />
+                  <div className="space-y-2">
+                    <Label>工作年限 <span className="text-destructive">*</span></Label>
+                    <Input type="number" {...form.register("work_experience_years", { valueAsNumber: true })} placeholder="0" />
+                    {form.formState.errors.work_experience_years && (
+                      <p className="text-xs text-destructive">{form.formState.errors.work_experience_years.message}</p>
+                    )}
                   </div>
                 </div>
-                <div>
+                <div className="space-y-2 mt-4">
                   <Label>最高学历</Label>
-                  <Input {...form.register("education_level")} />
+                  <Input {...form.register("education_level")} placeholder="如：本科、硕士" />
                 </div>
+              </div>
 
-                <fieldset className="border p-4 rounded">
-                  <legend className="text-sm font-medium">联系方式</legend>
-                  <div className="grid grid-cols-2 gap-x-6 gap-y-2">
-                    <div>
-                      <Label>手机</Label>
-                      <Input {...form.register("contact.phone")} />
-                    </div>
-                    <div>
-                      <Label>邮箱</Label>
-                      <Input {...form.register("contact.email")} />
-                    </div>
-                    <div>
-                      <Label>微信</Label>
-                      <Input {...form.register("contact.wechat")} />
-                    </div>
-                    <div>
-                      <Label>其他</Label>
-                      <Input {...form.register("contact.other")} />
-                    </div>
+              <Separator />
+
+              <div>
+                <h2 className="text-lg font-semibold mb-4">联系方式</h2>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>手机</Label>
+                    <Input {...form.register("contact.phone")} placeholder="手机号码" />
                   </div>
-                </fieldset>
+                  <div className="space-y-2">
+                    <Label>邮箱</Label>
+                    <Input {...form.register("contact.email")} placeholder="邮箱地址" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>微信</Label>
+                    <Input {...form.register("contact.wechat")} placeholder="微信号" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>其他</Label>
+                    <Input {...form.register("contact.other")} placeholder="其他联系方式" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
-                <fieldset className="border p-4 rounded">
-                  <legend className="text-sm font-medium">工作经历</legend>
-                  {workFields.map((field, index) => (
-                    <div key={field.id} className="border-b pb-4 mb-4 last:border-0 last:pb-0 last:mb-0">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <Label>公司</Label>
-                          <Input {...form.register(`work_experience.${index}.company`)} />
-                        </div>
-                        <div>
-                          <Label>职位</Label>
-                          <Input {...form.register(`work_experience.${index}.position`)} />
-                        </div>
-                        <div>
-                          <Label>开始日期</Label>
-                          <Input type="date" {...form.register(`work_experience.${index}.start_date`)} />
-                        </div>
-                        <div>
-                          <Label>结束日期（留空表示至今）</Label>
-                          <Input type="date" {...form.register(`work_experience.${index}.end_date`)} />
-                        </div>
-                      </div>
-                      <div className="mt-2">
-                        <Label>工作描述</Label>
-                        <Textarea {...form.register(`work_experience.${index}.description`)} rows={2} />
-                      </div>
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        size="sm"
-                        className="mt-2"
-                        onClick={() => removeWork(index)}
-                      >
-                        删除
+          {/* Step 1: Work Experience */}
+          {currentStep === 1 && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">工作经历</h2>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => addWork({ company: "", position: "", start_date: "", description: "" })}
+                >
+                  <Plus className="h-4 w-4 mr-1" /> 添加
+                </Button>
+              </div>
+              {workFields.length === 0 && (
+                <p className="text-sm text-muted-foreground py-8 text-center">暂无工作经历，点击上方按钮添加</p>
+              )}
+              {workFields.map((field, index) => (
+                <Card key={field.id} className="border-dashed">
+                  <CardContent className="p-4 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">工作经历 {index + 1}</span>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => removeWork(index)}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
                     </div>
-                  ))}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => addWork({ company: "", position: "", start_date: "", description: "" })}
-                  >
-                    添加工作经历
-                  </Button>
-                </fieldset>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>公司</Label>
+                        <Input {...form.register(`work_experience.${index}.company`)} placeholder="公司名称" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>职位</Label>
+                        <Input {...form.register(`work_experience.${index}.position`)} placeholder="职位名称" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>开始日期</Label>
+                        <Input type="date" {...form.register(`work_experience.${index}.start_date`)} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>结束日期</Label>
+                        <Input type="date" {...form.register(`work_experience.${index}.end_date`)} placeholder="留空表示至今" />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>工作描述</Label>
+                      <Textarea {...form.register(`work_experience.${index}.description`)} rows={2} placeholder="描述您的工作内容和成果" />
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
 
-                <fieldset className="border p-4 rounded">
-                  <legend className="text-sm font-medium">项目经历</legend>
-                  {projFields.map((field, index) => (
-                    <div key={field.id} className="border-b pb-4 mb-4 last:border-0 last:pb-0 last:mb-0">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <Label>项目名称</Label>
-                          <Input {...form.register(`project_experience.${index}.name`)} />
-                        </div>
-                        <div>
-                          <Label>角色</Label>
-                          <Input {...form.register(`project_experience.${index}.role`)} />
-                        </div>
-                        <div>
-                          <Label>开始日期</Label>
-                          <Input type="date" {...form.register(`project_experience.${index}.start_date`)} />
-                        </div>
-                        <div>
-                          <Label>结束日期</Label>
-                          <Input type="date" {...form.register(`project_experience.${index}.end_date`)} />
-                        </div>
-                      </div>
-                      <div className="mt-2">
-                        <Label>项目描述</Label>
-                        <Textarea {...form.register(`project_experience.${index}.description`)} rows={2} />
-                      </div>
-                      <div className="mt-2">
-                        <Label>技术栈（逗号分隔）</Label>
-                        <Input
-                          onChange={(e) => {
-                            const val = e.target.value
-                              .split(",")
-                              .map((s) => s.trim())
-                              .filter(Boolean);
-                            form.setValue(`project_experience.${index}.technologies`, val);
-                          }}
-                        />
-                      </div>
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        size="sm"
-                        className="mt-2"
-                        onClick={() => removeProj(index)}
-                      >
-                        删除
+          {/* Step 2: Project Experience */}
+          {currentStep === 2 && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">项目经历</h2>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => addProj({ name: "", role: "", start_date: "", description: "", technologies: [] })}
+                >
+                  <Plus className="h-4 w-4 mr-1" /> 添加
+                </Button>
+              </div>
+              {projFields.length === 0 && (
+                <p className="text-sm text-muted-foreground py-8 text-center">暂无项目经历，点击上方按钮添加</p>
+              )}
+              {projFields.map((field, index) => (
+                <Card key={field.id} className="border-dashed">
+                  <CardContent className="p-4 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">项目经历 {index + 1}</span>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => removeProj(index)}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
                     </div>
-                  ))}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      addProj({ name: "", role: "", start_date: "", description: "", technologies: [] })
-                    }
-                  >
-                    添加项目经历
-                  </Button>
-                </fieldset>
-
-                <fieldset className="border p-4 rounded">
-                  <legend className="text-sm font-medium">教育经历</legend>
-                  {eduFields.map((field, index) => (
-                    <div key={field.id} className="flex gap-4 items-end border-b pb-4 mb-4 last:border-0 last:pb-0 last:mb-0">
-                      <div className="grid grid-cols-2 gap-4 flex-1">
-                        <div>
-                          <Label>学校</Label>
-                          <Input {...form.register(`education.${index}.school`)} />
-                        </div>
-                        <div>
-                          <Label>专业</Label>
-                          <Input {...form.register(`education.${index}.major`)} />
-                        </div>
-                        <div>
-                          <Label>学位</Label>
-                          <Input {...form.register(`education.${index}.degree`)} />
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <Label>开始日期</Label>
-                            <Input type="date" {...form.register(`education.${index}.start_date`)} />
-                          </div>
-                          <div>
-                            <Label>结束日期</Label>
-                            <Input type="date" {...form.register(`education.${index}.end_date`)} />
-                          </div>
-                        </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>项目名称</Label>
+                        <Input {...form.register(`project_experience.${index}.name`)} placeholder="项目名称" />
                       </div>
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => removeEdu(index)}
-                      >
-                        删除
-                      </Button>
+                      <div className="space-y-2">
+                        <Label>角色</Label>
+                        <Input {...form.register(`project_experience.${index}.role`)} placeholder="您在项目中的角色" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>开始日期</Label>
+                        <Input type="date" {...form.register(`project_experience.${index}.start_date`)} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>结束日期</Label>
+                        <Input type="date" {...form.register(`project_experience.${index}.end_date`)} placeholder="留空表示至今" />
+                      </div>
                     </div>
-                  ))}
+                    <div className="space-y-2">
+                      <Label>项目描述</Label>
+                      <Textarea {...form.register(`project_experience.${index}.description`)} rows={2} placeholder="描述项目内容和您的贡献" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>技术栈（逗号分隔）</Label>
+                      <Input
+                        placeholder="React, TypeScript, Node.js"
+                        defaultValue={form.getValues(`project_experience.${index}.technologies`)?.join(", ") || ""}
+                        onChange={(e) => {
+                          const val = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
+                          form.setValue(`project_experience.${index}.technologies`, val);
+                        }}
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {/* Step 3: Education & Skills */}
+          {currentStep === 3 && (
+            <div className="space-y-6">
+              {/* Education */}
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-semibold">教育经历</h2>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     onClick={() => addEdu({ school: "", major: "", degree: "", start_date: "" })}
                   >
-                    添加教育经历
+                    <Plus className="h-4 w-4 mr-1" /> 添加
                   </Button>
-                </fieldset>
+                </div>
+                {eduFields.map((field, index) => (
+                  <Card key={field.id} className="border-dashed mb-4">
+                    <CardContent className="p-4 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium">教育经历 {index + 1}</span>
+                        <Button type="button" variant="ghost" size="sm" onClick={() => removeEdu(index)}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>学校</Label>
+                          <Input {...form.register(`education.${index}.school`)} placeholder="学校名称" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>专业</Label>
+                          <Input {...form.register(`education.${index}.major`)} placeholder="专业名称" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>学位</Label>
+                          <Input {...form.register(`education.${index}.degree`)} placeholder="如：学士、硕士" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>开始日期</Label>
+                            <Input type="date" {...form.register(`education.${index}.start_date`)} />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>结束日期</Label>
+                            <Input type="date" {...form.register(`education.${index}.end_date`)} />
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
 
-                <fieldset className="border p-4 rounded">
-                  <legend className="text-sm font-medium">资格证书</legend>
-                  {certFields.map((field, index) => (
-                    <div
-                      key={field.id}
-                      className="flex gap-4 items-end border-b pb-4 mb-4 last:border-0 last:pb-0 last:mb-0"
-                    >
-                      <div className="flex-1">
-                        <Label>证书名称</Label>
-                        <Input {...form.register(`certificates.${index}.name`)} />
-                      </div>
-                      <div className="w-40">
-                        <Label>获得日期</Label>
-                        <Input type="date" {...form.register(`certificates.${index}.date`)} />
-                      </div>
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => removeCert(index)}
-                      >
-                        删除
-                      </Button>
-                    </div>
-                  ))}
+              <Separator />
+
+              {/* Certificates */}
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-semibold">资格证书</h2>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     onClick={() => addCert({ name: "", date: "" })}
                   >
-                    添加证书
-                  </Button>
-                </fieldset>
-
-                <div>
-                  <Label>专业技能（逗号分隔）</Label>
-                  <Input
-                    onChange={(e) => {
-                      const val = e.target.value
-                        .split(",")
-                        .map((s) => s.trim())
-                        .filter(Boolean);
-                      form.setValue("skills", val);
-                    }}
-                  />
-                </div>
-                <div>
-                  <Label>自我评价</Label>
-                  <Textarea {...form.register("self_evaluation")} rows={4} />
-                </div>
-
-                <div className="flex justify-end gap-4 mt-4">
-                  <Button type="button" variant="outline" onClick={() => setStep("cover")}>
-                    下一步：求职信
+                    <Plus className="h-4 w-4 mr-1" /> 添加
                   </Button>
                 </div>
+                {certFields.map((field, index) => (
+                  <div key={field.id} className="flex gap-4 items-end mb-4">
+                    <div className="flex-1 space-y-2">
+                      <Label>证书名称</Label>
+                      <Input {...form.register(`certificates.${index}.name`)} placeholder="证书名称" />
+                    </div>
+                    <div className="w-40 space-y-2">
+                      <Label>获得日期</Label>
+                      <Input type="date" {...form.register(`certificates.${index}.date`)} />
+                    </div>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => removeCert(index)}>
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+                ))}
               </div>
-            )}
 
-            {step === "cover" && (
-              <div className="space-y-4">
-                <Label>求职信（选填）</Label>
-                <Textarea rows={6} value={coverLetter} onChange={(e) => setCoverLetter(e.target.value)} />
-                <div className="flex justify-between">
-                  <Button type="button" variant="outline" onClick={() => setStep("form")}>
-                    上一步
-                  </Button>
-                  <Button type="button" onClick={() => setStep("confirm")}>
-                    预览并提交
-                  </Button>
-                </div>
+              <Separator />
+
+              {/* Skills */}
+              <div className="space-y-2">
+                <Label>专业技能（逗号分隔）</Label>
+                <Input
+                  placeholder="JavaScript, Python, 项目管理"
+                  defaultValue={form.getValues("skills")?.join(", ") || ""}
+                  onChange={(e) => {
+                    const val = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
+                    form.setValue("skills", val);
+                  }}
+                />
               </div>
-            )}
 
-            {step === "confirm" && (
-              <div className="space-y-4">
-                <p className="font-semibold">确认投递信息</p>
-                <pre className="text-sm bg-gray-100 p-4 rounded overflow-auto max-h-96">
-                  {buildFullResumeText(form.getValues())}
-                </pre>
-                <div className="flex justify-between">
-                  <Button type="button" variant="outline" onClick={() => setStep("cover")}>
-                    上一步
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={() => handleFinalSubmit(false)}
-                    disabled={createApplicationMutation.isPending}
-                  >
-                    {createApplicationMutation.isPending ? "提交中..." : "提交投递"}
-                  </Button>
-                </div>
+              <div className="space-y-2">
+                <Label>自我评价</Label>
+                <Textarea {...form.register("self_evaluation")} rows={4} placeholder="简要介绍自己的优势和职业目标" />
               </div>
-            )}
-          </CardContent>
-        </Card>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-        <Dialog open={showConfirm} onOpenChange={setShowConfirm}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>您已投递过该岗位</DialogTitle>
-              <DialogDescription>是否使用当前简历覆盖原投递？</DialogDescription>
-            </DialogHeader>
-            <DialogFooter className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setShowConfirm(false)}>
-                取消
-              </Button>
-              <Button type="button" onClick={handleForceSubmit} disabled={createApplicationMutation.isPending}>
-                覆盖提交
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+      {/* Navigation buttons */}
+      <div className="flex justify-between mt-6">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={handlePrev}
+          disabled={currentStep === 0}
+        >
+          上一步
+        </Button>
+        {currentStep < STEPS.length - 1 ? (
+          <Button type="button" onClick={handleNext}>
+            下一步
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            onClick={handleSubmit}
+            disabled={createApplicationMutation.isPending}
+          >
+            {createApplicationMutation.isPending ? "提交中..." : "提交投递"}
+          </Button>
+        )}
+      </div>
 
-        <Dialog open={showSuccess} onOpenChange={setShowSuccess}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>简历提交成功</DialogTitle>
-              <DialogDescription>您的简历已成功提交，招聘方将尽快查看。</DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button
-                type="button"
-                onClick={() => {
-                  setShowSuccess(false);
-                  navigate(`/jobs/${jobId}`);
-                }}
-                className="w-full"
-              >
-                确定
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-    </main>
+      {/* 409 Conflict dialog */}
+      <Dialog open={showConfirm} onOpenChange={setShowConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>您已投递过该岗位</DialogTitle>
+            <DialogDescription>是否使用当前简历覆盖原投递？</DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setShowConfirm(false)}>
+              取消
+            </Button>
+            <Button type="button" onClick={handleForceSubmit} disabled={createApplicationMutation.isPending}>
+              覆盖提交
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Success dialog */}
+      <Dialog open={showSuccess} onOpenChange={setShowSuccess}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>简历提交成功</DialogTitle>
+            <DialogDescription>您的简历已成功提交，招聘方将尽快查看。</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              onClick={() => {
+                setShowSuccess(false);
+                navigate(`/jobs/${jobId}`);
+              }}
+              className="w-full"
+            >
+              确定
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
