@@ -1,9 +1,26 @@
+import type { JobStatus } from "@/features/jobs/types/job";
+
 export type ApplicationStatus = "pending" | "reviewed" | "interview" | "rejected" | "hired";
 
 export interface StatusStyle {
   label: string;
   className: string;
 }
+
+export const JOB_STATUS_MAP: Record<JobStatus, StatusStyle> = {
+  active: {
+    label: "活跃",
+    className: "bg-green-100 text-green-800 hover:bg-green-100/80",
+  },
+  draft: {
+    label: "草稿",
+    className: "bg-slate-100 text-slate-800 hover:bg-slate-100/80",
+  },
+  closed: {
+    label: "已关闭",
+    className: "bg-red-100 text-red-800 hover:bg-red-100/80",
+  },
+};
 
 export const APPLICATION_STATUS_MAP: Record<ApplicationStatus, StatusStyle> = {
   pending: {

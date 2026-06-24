@@ -1,10 +1,17 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import {
+  Briefcase,
+  Eye,
+  Power,
+  MoreHorizontal,
+  TrendingUp,
+  XCircle,
+  Users,
+} from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -14,43 +21,62 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { useAuthStore } from "@/features/auth/store/authStore";
 import {
   useDeleteJobMutation,
   useRecruiterJobsQuery,
   useUpdateJobStatusMutation,
 } from "@/features/jobs/hooks/useJobs";
-import type { Job, JobStatus } from "@/features/jobs/types/job";
+import type { Job } from "@/features/jobs/types/job";
 import { getApiErrorMessage } from "@/shared/api/error";
+import { JobStatusBadge } from "@/shared/ui/JobStatusBadge";
 import EmptyState from "@/shared/ui/feedback/EmptyState";
 import ErrorState from "@/shared/ui/feedback/ErrorState";
-import LoadingState from "@/shared/ui/feedback/LoadingState";
+import { StatCard } from "@/shared/ui/StatCard";
+import { useBreadcrumb } from "@/shared/ui/layout/breadcrumb-context";
 
 export default function JobDashboardPage() {
-  const [deleteTarget, setDeleteTarget] = useState<Job | null>(null);
   const navigate = useNavigate();
-
   const { user } = useAuthStore();
+  const { setItems: setBreadcrumbItems } = useBreadcrumb();
+  const [deleteTarget, setDeleteTarget] = useState<Job | null>(null);
+  const [closeTarget, setCloseTarget] = useState<Job | null>(null);
 
   const { data: jobs = [], isLoading, isError, refetch } = useRecruiterJobsQuery(user?.id);
   const updateStatusMutation = useUpdateJobStatusMutation();
   const deleteJobMutation = useDeleteJobMutation();
 
-  const handleStatusChange = async (jobId: string, newStatus: string) => {
+  // Compute stats from jobs array
+  const activeJobs = jobs.filter((j) => j.status === "active").length;
+  const closedJobs = jobs.filter((j) => j.status === "closed").length;
+  const totalApplications = jobs.reduce((sum, j) => sum + (j.applications_count ?? 0), 0);
+
+  useEffect(() => {
+    setBreadcrumbItems([{ label: "首页", href: "/dashboard" }, { label: "我的岗位" }]);
+  }, [setBreadcrumbItems]);
+
+  const handleCloseJob = async () => {
+    if (!closeTarget) return;
     try {
-      await updateStatusMutation.mutateAsync({
-        jobId,
-        status: newStatus as JobStatus,
-      });
-      toast.success("状态已更新");
+      await updateStatusMutation.mutateAsync({ jobId: closeTarget.id, status: "closed" });
+      toast.success("岗位已关闭");
+      setCloseTarget(null);
     } catch (err) {
-      toast.error(getApiErrorMessage(err, "状态更新失败"));
+      toast.error(getApiErrorMessage(err, "关闭岗位失败"));
     }
   };
 
@@ -65,74 +91,136 @@ export default function JobDashboardPage() {
     }
   };
 
-  return (
-    <main>
-      {isLoading ? (
-          <LoadingState />
-        ) : isError ? (
-          <ErrorState message="获取岗位列表失败" onRetry={refetch} />
-        ) : jobs.length === 0 ? (
-          <EmptyState message="你暂未发布岗位" />
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {jobs.map((job) => (
-              <Card key={job.id} className="hover:shadow-lg">
-                <CardHeader>
-                  <div className="flex justify-between items-start">
-                    <CardTitle
-                      className="text-lg cursor-pointer"
-                      onClick={() => navigate(`/jobs/${job.id}`)}
-                    >
-                      {job.title}
-                    </CardTitle>
-                    <Select value={job.status} onValueChange={(v) => handleStatusChange(job.id, v)}>
-                      <SelectTrigger className="w-28 h-8">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="active">活跃</SelectItem>
-                        <SelectItem value="draft">草稿</SelectItem>
-                        <SelectItem value="closed">关闭</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Badge variant={job.status === "active" ? "default" : "secondary"}>
-                    {job.status === "active" ? "活跃" : job.status === "draft" ? "草稿" : "已关闭"}
-                  </Badge>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground">
-                    创建于 {new Date(job.created_at).toLocaleDateString()}
-                  </p>
-                  <div className="mt-2">
-                    {job.applications_count != null && job.applications_count > 0 ? (
-                      <p className="text-2xl font-bold">目前收到 {job.applications_count} 份简历</p>
-                    ) : (
-                      <p className="text-lg text-muted-foreground font-medium">暂未收到简历</p>
-                    )}
-                  </div>
-                  <div className="mt-4 flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => navigate(`/dashboard/applicants/${job.id}`)}
-                    >
-                      查看申请
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => setDeleteTarget(job)}
-                    >
-                      删除
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
+  if (isLoading) {
+    return (
+      <div>
+        <h1 className="text-2xl font-bold mb-6">我的岗位</h1>
+        {/* Skeleton stat cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-24 rounded-lg" />
+          ))}
+        </div>
+        {/* Skeleton table rows */}
+        <div className="space-y-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-12 w-full rounded-lg" />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
+  if (isError) {
+    return <ErrorState message="获取岗位列表失败" onRetry={refetch} />;
+  }
+
+  if (jobs.length === 0) {
+    return (
+      <div>
+        <h1 className="text-2xl font-bold mb-6">我的岗位</h1>
+        <EmptyState
+          icon={Briefcase}
+          message="暂未发布岗位"
+          action={{ label: "发布新岗位", onClick: () => navigate("/dashboard/post") }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h1 className="text-2xl font-bold mb-6">我的岗位</h1>
+
+      {/* Stat cards row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <StatCard icon={Briefcase} value={activeJobs} label="在线岗位" iconColor="text-blue-600" />
+        <StatCard icon={XCircle} value={closedJobs} label="已关闭岗位" iconColor="text-slate-500" />
+        <StatCard icon={Users} value={totalApplications} label="总申请数" iconColor="text-green-600" />
+        {/* TODO: compute from jobs data filtered by created_at within last 7 days */}
+        <StatCard icon={TrendingUp} value={0} label="本周新增" iconColor="text-amber-600" />
+      </div>
+
+      {/* Job table */}
+      <div className="border rounded-lg">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>岗位名称</TableHead>
+              <TableHead>状态</TableHead>
+              <TableHead className="text-center">申请人数</TableHead>
+              <TableHead>发布时间</TableHead>
+              <TableHead className="text-right">操作</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {jobs.map((job) => (
+              <TableRow key={job.id}>
+                <TableCell className="font-medium">{job.title}</TableCell>
+                <TableCell>
+                  <JobStatusBadge status={job.status} />
+                </TableCell>
+                <TableCell className="text-center">
+                  {job.applications_count ?? 0}
+                </TableCell>
+                <TableCell>
+                  {new Date(job.created_at).toLocaleDateString()}
+                </TableCell>
+                <TableCell className="text-right">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => navigate(`/dashboard/applicants/${job.id}`)}>
+                        <Eye className="h-4 w-4 mr-2" />
+                        查看申请人
+                      </DropdownMenuItem>
+                      {job.status === "active" && (
+                        <DropdownMenuItem onClick={() => setCloseTarget(job)}>
+                          <Power className="h-4 w-4 mr-2" />
+                          关闭岗位
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem
+                        className="text-destructive"
+                        onClick={() => setDeleteTarget(job)}
+                      >
+                        <XCircle className="h-4 w-4 mr-2" />
+                        删除
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Close job confirmation dialog */}
+      <Dialog open={!!closeTarget} onOpenChange={() => setCloseTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认关闭岗位</DialogTitle>
+            <DialogDescription>
+              确定要关闭岗位「{closeTarget?.title}」吗？关闭后将不再接受新的投递。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCloseTarget(null)}>
+              取消
+            </Button>
+            <Button onClick={handleCloseJob} disabled={updateStatusMutation.isPending}>
+              确认关闭
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirmation dialog */}
       <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
         <DialogContent>
           <DialogHeader>
@@ -155,6 +243,6 @@ export default function JobDashboardPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </main>
+    </div>
   );
 }
