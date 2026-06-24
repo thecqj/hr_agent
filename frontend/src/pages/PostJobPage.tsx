@@ -17,7 +17,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { useCreateJobMutation } from "@/features/jobs/hooks/useJobs";
 import type { WorkType } from "@/features/jobs/types/job";
@@ -102,30 +101,46 @@ export default function PostJobPage() {
   };
 
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-2xl mx-auto">
       <h1 className="text-2xl font-bold mb-6">发布新岗位</h1>
 
-      <Card className="shadow-sm hover:shadow-md transition-shadow duration-200">
-        <form onSubmit={handleSubmit(onSubmit)}>
-          {/* 基本信息 */}
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        {/* 基本信息 */}
+        <Card>
           <CardHeader>
             <CardTitle>基本信息</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <Label htmlFor="title">岗位名称</Label>
-              <Input id="title" {...register("title")} className="mt-1.5" />
+              <Label htmlFor="title">
+                岗位名称 <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="title"
+                {...register("title")}
+                className="mt-1.5"
+                placeholder="例如：高级前端工程师"
+              />
               {formState.errors.title && (
                 <p className="text-sm text-destructive mt-1">{formState.errors.title.message}</p>
               )}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="location">工作地点</Label>
-                <Input id="location" {...register("location")} className="mt-1.5" placeholder="如：北京" />
+                <Label htmlFor="location">
+                  工作地点 <span className="text-muted-foreground text-xs">(选填)</span>
+                </Label>
+                <Input
+                  id="location"
+                  {...register("location")}
+                  className="mt-1.5"
+                  placeholder="例如：北京市海淀区"
+                />
               </div>
               <div>
-                <Label>工作类型</Label>
+                <Label>
+                  工作类型 <span className="text-muted-foreground text-xs">(选填)</span>
+                </Label>
                 <Select
                   onValueChange={(value) => setValue("work_type", value as WorkType)}
                   defaultValue="onsite"
@@ -145,43 +160,51 @@ export default function PostJobPage() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="salary_min">最低薪资 (K)</Label>
+                <Label htmlFor="salary_min">
+                  最低薪资 (K) <span className="text-muted-foreground text-xs">(选填)</span>
+                </Label>
                 <Input
                   id="salary_min"
                   type="number"
                   {...register("salary_min", { valueAsNumber: true })}
                   className="mt-1.5"
-                  placeholder="如：15"
+                  placeholder="例如：15"
                 />
+                <p className="text-xs text-muted-foreground mt-1">请输入月薪范围（单位：K）</p>
                 {formState.errors.salary_min && (
                   <p className="text-sm text-destructive mt-1">{formState.errors.salary_min.message}</p>
                 )}
               </div>
               <div>
-                <Label htmlFor="salary_max">最高薪资 (K)</Label>
+                <Label htmlFor="salary_max">
+                  最高薪资 (K) <span className="text-muted-foreground text-xs">(选填)</span>
+                </Label>
                 <Input
                   id="salary_max"
                   type="number"
                   {...register("salary_max", { valueAsNumber: true })}
                   className="mt-1.5"
-                  placeholder="如：25"
+                  placeholder="例如：25"
                 />
+                <p className="text-xs text-muted-foreground mt-1">请输入月薪范围（单位：K）</p>
                 {formState.errors.salary_max && (
                   <p className="text-sm text-destructive mt-1">{formState.errors.salary_max.message}</p>
                 )}
               </div>
             </div>
           </CardContent>
+        </Card>
 
-          <Separator />
-
-          {/* 岗位详情 */}
+        {/* 岗位详情 */}
+        <Card>
           <CardHeader>
             <CardTitle>岗位详情</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <Label htmlFor="description">岗位描述</Label>
+              <Label htmlFor="description">
+                岗位描述 <span className="text-destructive">*</span>
+              </Label>
               <Textarea
                 id="description"
                 {...register("description")}
@@ -194,7 +217,9 @@ export default function PostJobPage() {
               )}
             </div>
             <div>
-              <Label htmlFor="requirements">任职要求</Label>
+              <Label htmlFor="requirements">
+                任职要求 <span className="text-muted-foreground text-xs">(选填)</span>
+              </Label>
               <Textarea
                 id="requirements"
                 rows={4}
@@ -205,26 +230,29 @@ export default function PostJobPage() {
               />
             </div>
           </CardContent>
+        </Card>
 
-          <Separator />
-
-          {/* 技能标签 */}
+        {/* 技能标签 */}
+        <Card>
           <CardHeader>
-            <CardTitle>技能标签</CardTitle>
+            <CardTitle>技能标签 <span className="text-muted-foreground text-xs font-normal">(选填)</span></CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex gap-2">
-              <Input
-                value={skillInput}
-                onChange={(e) => setSkillInput(e.target.value)}
-                onKeyDown={handleSkillKeyDown}
-                placeholder="输入技能后按回车添加"
-                className="flex-1"
-              />
-              <Button type="button" variant="outline" onClick={addSkill}>
-                <Plus className="h-4 w-4 mr-1" />
-                添加
-              </Button>
+            <div>
+              <p className="text-xs text-muted-foreground mb-2">按 Enter 添加标签</p>
+              <div className="flex gap-2">
+                <Input
+                  value={skillInput}
+                  onChange={(e) => setSkillInput(e.target.value)}
+                  onKeyDown={handleSkillKeyDown}
+                  placeholder="输入技能后按回车添加"
+                  className="flex-1"
+                />
+                <Button type="button" variant="outline" onClick={addSkill}>
+                  <Plus className="h-4 w-4 mr-1" />
+                  添加
+                </Button>
+              </div>
             </div>
             {skills.length > 0 && (
               <div className="flex flex-wrap gap-2">
@@ -246,21 +274,17 @@ export default function PostJobPage() {
               </div>
             )}
           </CardContent>
+        </Card>
 
-          <Separator />
-
-          {/* Submit */}
-          <CardContent className="pt-6">
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={formState.isSubmitting || createJobMutation.isPending}
-            >
-              {createJobMutation.isPending ? "发布中..." : "发布岗位"}
-            </Button>
-          </CardContent>
-        </form>
-      </Card>
+        {/* Submit */}
+        <Button
+          type="submit"
+          className="w-full"
+          disabled={formState.isSubmitting || createJobMutation.isPending}
+        >
+          {createJobMutation.isPending ? "发布中..." : "发布岗位"}
+        </Button>
+      </form>
     </div>
   );
 }

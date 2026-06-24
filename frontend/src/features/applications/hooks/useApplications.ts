@@ -16,10 +16,11 @@ interface MyApplicationsParams {
   status?: ApplicationStatus;
 }
 
-export function useMyApplicationsQuery(params: MyApplicationsParams = {}) {
+export function useMyApplicationsQuery(params: MyApplicationsParams = {}, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: queryKeys.applications.mine(params),
     queryFn: () => getMyApplications(params),
+    enabled: options?.enabled ?? true,
   });
 }
 

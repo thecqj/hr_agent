@@ -48,20 +48,30 @@ async def apply(
     current_user: User = Depends(get_required_user),
 ) -> ApplicationResponse:
     application = await application_service.create_application(db, data, current_user, force=force)
-    return ApplicationResponse.model_validate(_app_to_dict(application, applicant_name=current_user.name))
+    return ApplicationResponse.model_validate(_app_to_dict(application, applicant_name=current_user.name, job_title=application.job.title if application.job else None))
 
 
 @router.get("/my", response_model=ApplicationListResponse, summary="我的投递记录")
 async def my_applications(
+    status: Optional[str] = Query(None, description="状态过滤"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_required_user),
 ) -> ApplicationListResponse:
     applications, total = await application_service.get_my_applications(
-        db, current_user, page=page, page_size=page_size
+        db, current_user, status_filter=status, page=page, page_size=page_size
     )
-    items = [ApplicationResponse.model_validate(_app_to_dict(app, applicant_name=current_user.name)) for app in applications]
+    items = [
+        ApplicationResponse.model_validate(
+            _app_to_dict(
+                app,
+                applicant_name=current_user.name,
+                job_title=app.job.title if app.job else None,
+            )
+        )
+        for app in applications
+    ]
     return ApplicationListResponse(total=total, page=page, page_size=page_size, items=items)
 
 

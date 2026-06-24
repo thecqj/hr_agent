@@ -11,6 +11,8 @@ import {
 } from "@/components/ui/pagination";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { WorkType } from "@/features/jobs/types/job";
+import { useAuthStore } from "@/features/auth/store/authStore";
+import { useMyApplicationsQuery } from "@/features/applications/hooks/useApplications";
 import { useJobsQuery } from "@/features/jobs/hooks/useJobs";
 import { useBreadcrumb } from "@/shared/ui/layout/breadcrumb-context";
 import { CategoryTabs } from "@/shared/ui/CategoryTabs";
@@ -34,6 +36,7 @@ export default function JobMarketPage() {
   const [workType, setWorkType] = useState<string>("all");
   const [page, setPage] = useState(1);
   const { setItems: setBreadcrumbItems } = useBreadcrumb();
+  const user = useAuthStore((s) => s.user);
 
   useEffect(() => {
     setBreadcrumbItems([{ label: "岗位市场" }]);
@@ -49,6 +52,16 @@ export default function JobMarketPage() {
   const { data, isLoading, isError, refetch } = useJobsQuery(params);
   const jobs = data?.items ?? [];
   const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 0;
+
+  // Fetch user's applications to determine which jobs they've already applied to
+  const isJobSeeker = user?.role === "job_seeker";
+  const { data: applicationsData } = useMyApplicationsQuery(
+    { page: 1, page_size: 100 },
+    { enabled: isJobSeeker }
+  );
+  const appliedJobIds = isJobSeeker
+    ? new Set((applicationsData?.items ?? []).map((app) => app.job_id))
+    : new Set<string>();
 
   const handleSearch = () => {
     setKeyword(searchInput);
@@ -104,7 +117,7 @@ export default function JobMarketPage() {
         <>
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {jobs.map((job) => (
-              <JobCard key={job.id} job={job} />
+              <JobCard key={job.id} job={job} applied={appliedJobIds.has(job.id)} />
             ))}
           </div>
 

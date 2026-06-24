@@ -45,7 +45,7 @@ async def create_application(
         existing_app.structured_resume = data.structured_resume.model_dump() if data.structured_resume else None
         existing_app.status = ApplicationStatus.PENDING
         await db.commit()
-        await db.refresh(existing_app)
+        await db.refresh(existing_app, attribute_names=["job"])
         return existing_app
 
     application = Application(
@@ -58,7 +58,7 @@ async def create_application(
     )
     db.add(application)
     await db.commit()
-    await db.refresh(application)
+    await db.refresh(application, attribute_names=["job"])
     return application
 
 
@@ -97,11 +97,21 @@ async def get_applications_for_job(
 async def get_my_applications(
     db: AsyncSession,
     current_user: User,
+    status_filter: Optional[str] = None,
     page: int = 1,
     page_size: int = 20,
 ) -> Tuple[list[Application], int]:
     """求职者查看自己的投递记录"""
-    query = select(Application).where(Application.applicant_id == current_user.id).options(selectinload(Application.applicant))
+    query = select(Application).where(Application.applicant_id == current_user.id).options(
+        selectinload(Application.applicant),
+        selectinload(Application.job),
+    )
+
+    if status_filter:
+        try:
+            query = query.where(Application.status == ApplicationStatus(status_filter))
+        except ValueError:
+            pass
 
     count_query = select(func.count()).select_from(query.subquery())
     total = (await db.execute(count_query)).scalar() or 0

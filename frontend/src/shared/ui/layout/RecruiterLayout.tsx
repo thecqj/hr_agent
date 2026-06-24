@@ -29,8 +29,16 @@ function RecruiterLayoutInner() {
   const user = useAuthStore((s) => s.user);
   const { items: breadcrumbItems } = useBreadcrumb();
 
-  const isActive = (path: string) =>
-    location.pathname === path || location.pathname.startsWith(path + "/");
+  const isActive = (path: string) => {
+    if (path === "/dashboard") {
+      // "我的岗位" is active for /dashboard and /dashboard/applicants/*
+      return (
+        location.pathname === "/dashboard" ||
+        location.pathname.startsWith("/dashboard/applicants/")
+      );
+    }
+    return location.pathname === path;
+  };
 
   return (
     <div className="min-h-screen bg-background flex">

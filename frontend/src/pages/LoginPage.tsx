@@ -111,6 +111,13 @@ export default function LoginPage() {
               {loginMutation.isPending ? "登录中..." : "登录"}
             </Button>
           </form>
+
+          <p className="text-center text-sm text-muted-foreground mt-4">
+            还没有账号？{" "}
+            <a href="/register" className="text-primary hover:underline">
+              立即注册
+            </a>
+          </p>
         </div>
       </div>
     </div>

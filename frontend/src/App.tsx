@@ -7,6 +7,7 @@ import JobDashboardPage from "@/pages/JobDashboardPage";
 import JobDetailPage from "@/pages/JobDetailPage";
 import JobMarketPage from "@/pages/JobMarketPage";
 import LoginPage from "@/pages/LoginPage";
+import RegisterPage from "@/pages/RegisterPage";
 import MyApplicationsPage from "@/pages/MyApplicationsPage";
 import PostJobPage from "@/pages/PostJobPage";
 import RecruiterLayout from "@/shared/ui/layout/RecruiterLayout";
@@ -36,6 +37,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
 
         {/* Seeker routes — top-bar layout */}
         <Route element={<SeekerLayout />}>
