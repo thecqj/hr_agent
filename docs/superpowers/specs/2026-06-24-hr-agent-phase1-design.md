@@ -115,7 +115,7 @@ Phase 1 实现 HR-Agent 的核心工作流：**简历智能评估 → 候选人�
 | `id` | UUID | 任务 ID |
 | `job_id` | UUID (FK → jobs) | 关联岗位 |
 | `triggered_by` | UUID (FK → users) | 触发者（招聘者） |
-| `status` | Enum | `pending` → `running` → `completed` / `failed` |
+| `status` | Enum | `pending` → `running` → `completed` → `confirmed` / `failed` |
 | `total_count` | Integer | 待评估简历总数 |
 | `evaluated_count` | Integer | 已评估数量 |
 | `result_summary` | JSONB | 评估结果摘要（推荐/淘汰人数等） |
@@ -254,7 +254,7 @@ class EvaluationState(TypedDict):
 **3. `screen` 节点（纯排序，无 LLM）**
 - 按加权总分降序排列所有评估结果
 - 取 Top `interview_quota` 名为 `recommend`，其余为 `reject`
-- 若 `interview_quota` 为 null，则设分数线（≥60 分 recommend，<60 reject）
+- 若 `interview_quota` 为 null，则按固定阈值 60 分划分（≥60 recommend，<60 reject）。60 分阈值为经验值，后续可根据实际评估结果分布调整
 - 输出：`recommend_list` + `reject_list` + `cutoff_score`（进面最低分）
 
 **4. `review` 节点（LLM 复评）**
@@ -409,7 +409,7 @@ class EvaluateResponse(BaseModel):
 class TaskStatusResponse(BaseModel):
     task_id: str
     job_id: str
-    status: Literal["pending", "running", "completed", "failed"]
+    status: Literal["pending", "running", "completed", "confirmed", "failed"]
     total_count: int
     evaluated_count: int
     result_summary: dict | None   # completed 时有值
@@ -475,8 +475,9 @@ class ConfirmResponse(BaseModel):
 ### 7.4 数据一致性
 
 - 评估结果写入 `ai_*` 字段是草稿性质，不影响业务状态
-- 确认操作在事务中执行：更新 `Application.status` + 标记 `evaluation_task` 已确认
+- 确认操作在事务中执行：更新 `Application.status` + 标记 `evaluation_task` 状态为 `confirmed`
 - 确认是不可逆操作（状态从 pending → interview/rejected）
+- `collect` 节点仅查询 `status=pending` 的申请，已被评估确认的申请（status=interview/rejected）不会重复评估
 
 ### 7.5 速率限制
 
