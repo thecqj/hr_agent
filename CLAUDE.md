@@ -1,7 +1,7 @@
 ## Project Overview
 - 智能简历投递系统（HR Agent），帮助求职者自动匹配岗位并投递简历
 - 技术栈：FastAPI + SQLAlchemy 2.0 + Pydantic v2 (后端), Next.js + TypeScript (前端)
-- 当前阶段：重构前端页面 UI
+- 当前阶段：HR-Agent
 
 ## Architecture
 - backend/        - 后端代码
