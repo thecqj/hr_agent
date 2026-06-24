@@ -3,6 +3,7 @@ from typing import Optional, Tuple, Sequence, Dict, Any
 from fastapi import HTTPException, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.application import Application
 from app.models.job import Job, JobStatus, WorkType
@@ -37,7 +38,7 @@ async def create_job(db: AsyncSession, data: JobCreateRequest, current_user: Use
 
 async def get_job(db: AsyncSession, job_id: str) -> Job:
     """获取单个岗位"""
-    result = await db.execute(select(Job).where(Job.id == job_id))
+    result = await db.execute(select(Job).where(Job.id == job_id).options(selectinload(Job.applications)))
     job = result.scalar_one_or_none()
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="岗位不存在")
@@ -57,7 +58,7 @@ async def list_jobs(
     current_user: Optional[User] = None,
 ) -> Tuple[list[Job], int]:
     """岗位列表（支持过滤、搜索、分页）"""
-    query = select(Job)
+    query = select(Job).options(selectinload(Job.applications))
 
     if keyword:
         query = query.where(

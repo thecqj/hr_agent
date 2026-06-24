@@ -33,7 +33,7 @@ def _job_to_dict(job: Any, recruiter_name: Optional[str] = None) -> Dict[str, An
         "created_at": job.created_at,
         "updated_at": job.updated_at,
         "recruiter_name": recruiter_name,
-        "applications_count": 0,
+        "applications_count": len(job.applications),
     }
 
 

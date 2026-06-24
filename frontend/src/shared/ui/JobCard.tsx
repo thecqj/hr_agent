@@ -26,7 +26,7 @@ export function JobCard({ job, applied = false }: JobCardProps) {
           <Badge className="bg-green-100 text-green-800 hover:bg-green-100/80">已投递</Badge>
         </div>
       )}
-      <Link to={`/jobs/${job.id}`} className="block hover:no-underline">
+      <Link to={`/jobs/${job.id}`} className="block flex-1 hover:no-underline">
         <CardContent className="p-6">
           <h3 className="text-lg font-semibold">{job.title}</h3>
           <p className="text-sm text-muted-foreground mt-1">

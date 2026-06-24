@@ -281,3 +281,57 @@ async def test_update_job_status(
     )
     assert resp.status_code == 200
     assert resp.json()["status"] == "closed"
+
+
+@pytest.mark.asyncio
+async def test_applications_count_reflects_real_count(
+    client: AsyncClient, auth_headers_recruiter: dict[str, str]
+) -> None:
+    """岗位的 applications_count 应反映实际投递数"""
+    # 1. 招聘者创建岗位
+    create_resp = await client.post(
+        "/api/v1/jobs/",
+        json={"title": "计数测试", "description": "desc", "work_type": "onsite"},
+        headers=auth_headers_recruiter,
+    )
+    assert create_resp.status_code == 201
+    job_id = create_resp.json()["id"]
+    # 新建岗位 applications_count 应为 0
+    assert create_resp.json()["applications_count"] == 0
+
+    # 2. 注册求职者并投递
+    reg_resp = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "count_seeker@test.com",
+            "password": "testpass123",
+            "name": "计数求职者",
+            "role": "job_seeker",
+        },
+    )
+    seeker_token = reg_resp.json()["access_token"]
+    seeker_headers = {"Authorization": f"Bearer {seeker_token}"}
+
+    apply_resp = await client.post(
+        "/api/v1/applications/",
+        json={"job_id": job_id, "resume_text": "测试简历"},
+        headers=seeker_headers,
+    )
+    assert apply_resp.status_code == 201
+
+    # 3. 招聘者再次查询岗位列表，applications_count 应为 1
+    list_resp = await client.get(
+        "/api/v1/jobs/",
+        params={"status": "all"},
+        headers=auth_headers_recruiter,
+    )
+    assert list_resp.status_code == 200
+    items = list_resp.json()["items"]
+    target = next((j for j in items if j["id"] == job_id), None)
+    assert target is not None
+    assert target["applications_count"] == 1
+
+    # 4. 查询岗位详情，applications_count 也应为 1
+    detail_resp = await client.get(f"/api/v1/jobs/{job_id}")
+    assert detail_resp.status_code == 200
+    assert detail_resp.json()["applications_count"] == 1
