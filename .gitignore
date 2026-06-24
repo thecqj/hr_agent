@@ -1,10 +1,29 @@
-# Python-generated files
+# Python
 __pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
+*.py[cod]
+*.egg-info/
+.env
+venv/
+.venv/
+*.pyc
+.pytest_cache/
 
-# Virtual environments
-.venv
+# Node
+node_modules/
+dist/
+.env.local
+
+# Docker
+pgdata/
+minio_data/
+
+# IDE
+.vscode/
+.idea/
+
+# 系统文件
+Thumbs.db
+Desktop.ini
+
+# mypy
+.mypy_cache/

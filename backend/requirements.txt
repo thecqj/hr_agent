@@ -1,0 +1,29 @@
+# Web
+fastapi
+uvicorn[standard]
+
+# Database
+sqlalchemy[asyncio]
+psycopg[binary]
+pgvector
+alembic
+
+# Auth
+python-jose[cryptography]
+bcrypt
+python-multipart
+email-validator
+
+# Validation & settings
+pydantic
+pydantic-settings
+python-dotenv
+
+# HTTP client
+httpx
+
+# Testing
+pytest
+pytest-asyncio
+
+mypy
