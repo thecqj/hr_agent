@@ -5,7 +5,7 @@ from httpx import AsyncClient
 async def _create_job(client: AsyncClient, recruiter_headers: dict[str, str]) -> str:
     """辅助：创建一个 active 职位，返回 job_id"""
     resp = await client.post(
-        "/api/v1/jobs/",
+        "/api/jobs/",
         json={
             "title": "测试岗位",
             "description": "测试描述",
@@ -26,7 +26,7 @@ async def test_apply_as_seeker(
     job_id = await _create_job(client, auth_headers_recruiter)
 
     resp = await client.post(
-        "/api/v1/applications/",
+        "/api/applications/",
         json={
             "job_id": job_id,
             "resume_text": "我是求职者，有3年Python经验",
@@ -49,14 +49,14 @@ async def test_apply_as_recruiter_forbidden(
     """招聘者投递失败"""
     # 先创建一个岗位（需要用 recruiter 自己来创建）
     create_resp = await client.post(
-        "/api/v1/jobs/",
+        "/api/jobs/",
         json={"title": "For apply test", "description": "desc", "work_type": "onsite"},
         headers=auth_headers_recruiter,
     )
     job_id = create_resp.json()["id"]
 
     resp = await client.post(
-        "/api/v1/applications/",
+        "/api/applications/",
         json={"job_id": job_id, "resume_text": "我不应该能投递"},
         headers=auth_headers_recruiter,
     )
@@ -74,13 +74,13 @@ async def test_apply_closed_job(
 
     # 关闭职位
     await client.patch(
-        f"/api/v1/jobs/{job_id}/status",
+        f"/api/jobs/{job_id}/status",
         json={"status": "closed"},
         headers=auth_headers_recruiter,
     )
 
     resp = await client.post(
-        "/api/v1/applications/",
+        "/api/applications/",
         json={"job_id": job_id, "resume_text": "投递关闭的职位"},
         headers=auth_headers_seeker,
     )
@@ -98,7 +98,7 @@ async def test_apply_duplicate_job(
 
     # 第一次投递
     resp1 = await client.post(
-        "/api/v1/applications/",
+        "/api/applications/",
         json={"job_id": job_id, "resume_text": "第一次投递"},
         headers=auth_headers_seeker,
     )
@@ -106,7 +106,7 @@ async def test_apply_duplicate_job(
 
     # 第二次投递同一职位
     resp2 = await client.post(
-        "/api/v1/applications/",
+        "/api/applications/",
         json={"job_id": job_id, "resume_text": "第二次投递"},
         headers=auth_headers_seeker,
     )
@@ -123,13 +123,13 @@ async def test_my_applications(
     job_id = await _create_job(client, auth_headers_recruiter)
 
     await client.post(
-        "/api/v1/applications/",
+        "/api/applications/",
         json={"job_id": job_id, "resume_text": "我的简历"},
         headers=auth_headers_seeker,
     )
 
     resp = await client.get(
-        "/api/v1/applications/my",
+        "/api/applications/my",
         headers=auth_headers_seeker,
     )
     assert resp.status_code == 200
@@ -147,13 +147,13 @@ async def test_job_applications_as_owner(
     job_id = await _create_job(client, auth_headers_recruiter)
 
     await client.post(
-        "/api/v1/applications/",
+        "/api/applications/",
         json={"job_id": job_id, "resume_text": "投递申请"},
         headers=auth_headers_seeker,
     )
 
     resp = await client.get(
-        f"/api/v1/applications/job/{job_id}",
+        f"/api/applications/job/{job_id}",
         headers=auth_headers_recruiter,
     )
     assert resp.status_code == 200
@@ -172,7 +172,7 @@ async def test_job_applications_not_owner(
 
     # 求职者尝试查看岗位的申请列表
     resp = await client.get(
-        f"/api/v1/applications/job/{job_id}",
+        f"/api/applications/job/{job_id}",
         headers=auth_headers_seeker,
     )
     assert resp.status_code == 403
@@ -188,14 +188,14 @@ async def test_update_application_status(
     job_id = await _create_job(client, auth_headers_recruiter)
 
     apply_resp = await client.post(
-        "/api/v1/applications/",
+        "/api/applications/",
         json={"job_id": job_id, "resume_text": "状态更新测试"},
         headers=auth_headers_seeker,
     )
     application_id = apply_resp.json()["id"]
 
     resp = await client.patch(
-        f"/api/v1/applications/{application_id}/status",
+        f"/api/applications/{application_id}/status",
         json={"status": "reviewed"},
         headers=auth_headers_recruiter,
     )

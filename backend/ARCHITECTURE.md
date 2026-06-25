@@ -24,11 +24,11 @@ backend/
 │   ├── config.py               # Settings（pydantic-settings，读 .env）
 │   ├── database.py             # 异步引擎、会话工厂、init_db
 │   ├── api/                    # 路由层（HTTP 入口）
-│   │   ├── __init__.py         # api_router 统一注册 /api/v1 前缀
+│   │   ├── __init__.py         # api_router 统一注册 /api 前缀
 │   │   ├── deps.py             # 依赖注入：get_optional_user / get_required_user / require_role
-│   │   ├── auth.py             # /api/v1/auth/*  注册/登录/刷新/我/登出
-│   │   ├── jobs.py             # /api/v1/jobs/*   岗位 CRUD + 状态变更
-│   │   └── applications.py     # /api/v1/applications/*  投递/列表/状态更新
+│   │   ├── auth.py             # /api/auth/*  注册/登录/刷新/我/登出
+│   │   ├── jobs.py             # /api/jobs/*   岗位 CRUD + 状态变更
+│   │   └── applications.py     # /api/applications/*  投递/列表/状态更新
 │   ├── models/                 # ORM 层（数据库表定义）
 │   │   ├── base.py             # DeclarativeBase + TimestampMixin（id/created_at/updated_at）
 │   │   ├── user.py             # User + UserRole 枚举
@@ -122,7 +122,7 @@ Application (applications)      ← 投递/申请表
 
 ## API 路由总览
 
-所有业务路由统一挂载 `/api/v1` 前缀。
+所有业务路由统一挂载 `/api` 前缀。
 
 | 前缀 | 方法 | 路径 | 认证 | 说明 |
 |------|------|------|------|------|

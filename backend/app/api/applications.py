@@ -37,6 +37,11 @@ def _app_to_dict(app: Any, applicant_name: Optional[str] = None, job_title: Opti
         "structured_resume": app.structured_resume,
         "status": app.status.value if hasattr(app.status, "value") else app.status,
         "created_at": app.created_at,
+        "ai_score": app.ai_score,
+        "ai_evaluation": app.ai_evaluation,
+        "ai_decision": app.ai_decision,
+        "ai_decision_reason": app.ai_decision_reason,
+        "ai_evaluated_at": app.ai_evaluated_at,
     }
 
 

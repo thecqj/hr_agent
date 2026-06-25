@@ -28,11 +28,12 @@ async def create_job(db: AsyncSession, data: JobCreateRequest, current_user: Use
         location=data.location,
         work_type=data.work_type,
         skills_required=data.skills_required,
+        interview_quota=data.interview_quota,
         status=JobStatus.ACTIVE,
     )
     db.add(job)
     await db.commit()
-    await db.refresh(job)
+    await db.refresh(job, attribute_names=["applications"])
     return job
 
 
@@ -115,7 +116,7 @@ async def update_job(db: AsyncSession, job_id: str, data: JobUpdateRequest, curr
         setattr(job, key, value)
 
     await db.commit()
-    await db.refresh(job)
+    await db.refresh(job, attribute_names=["applications"])
     return job
 
 
@@ -146,5 +147,5 @@ async def update_job_status(
 
     job.status = data.status
     await db.commit()
-    await db.refresh(job)
+    await db.refresh(job, attribute_names=["applications"])
     return job

@@ -1,6 +1,6 @@
 # HR Agent Backend
 
-基于 **FastAPI + SQLAlchemy 2.x + PostgreSQL** 的后端服务，面向招聘/求职流程管理。当前版本已保留既有 API 契约（`/api/v1/*` 路径与请求/响应字段），AI 相关接口使用占位实现，便于后续平滑回填。
+基于 **FastAPI + SQLAlchemy 2.x + PostgreSQL** 的后端服务，面向招聘/求职流程管理。当前版本已保留既有 API 契约（`/api/*` 路径与请求/响应字段），AI 相关接口使用占位实现，便于后续平滑回填。
 
 ## 1. 主要功能
 

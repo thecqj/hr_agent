@@ -22,6 +22,10 @@ python-dotenv
 # HTTP client
 httpx
 
+# Workflow
+langgraph
+langchain-core
+
 # Testing
 pytest
 pytest-asyncio

@@ -22,7 +22,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 统一挂载 /api/v1 路由
+# 统一挂载 /api 路由
 app.include_router(api_router)
 
 
