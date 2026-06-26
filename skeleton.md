@@ -33,7 +33,8 @@ hr_agent/
 │   │   ├── api/                  # 路由 & 依赖注入
 │   │   ├── llm/                 # LLM 提供商抽象层
 │   │   ├── services/             # 业务逻辑
-│   │   │   └── agent/            # LangGraph 评估工作流
+│   │   │   ├── agent/            # LangGraph 评估工作流
+│   │   │   └── conversation/     # LangGraph 对话助手（Phase 2）
 │   │   └── utils/                # 工具函数
 │   └── tests/                    # 集成测试
 └── frontend/                     # ── 前端 ──
@@ -47,7 +48,8 @@ hr_agent/
     │   ├── features/             # 按业务域组织
     │   │   ├── auth/
     │   │   ├── jobs/
-    │   │   └── applications/
+    │   │   ├── applications/
+    │   │   └── chat/               # 对话助手（Phase 2）
     │   ├── pages/                # 页面组件
     │   ├── shared/               # 共享模块
     │   │   ├── api/
@@ -92,7 +94,7 @@ settings: Settings  # 模块级单例
 
 ---
 
-### `app/database.py` — 数据库引擎 & 会话
+### `app/database.py` — 数据库引擎 & 会话 & Checkpointer
 
 ```python
 engine: AsyncEngine
@@ -100,6 +102,15 @@ async_session: async_sessionmaker[AsyncSession]
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]
     """请求级会话，自动提交/回滚。"""
+
+async def init_checkpointer() -> AsyncPostgresSaver
+    """初始化 LangGraph PostgreSQL 持久化存储（AsyncConnectionPool）。"""
+
+def get_checkpointer() -> AsyncPostgresSaver
+    """返回已初始化的 checkpointer（需先调用 init_checkpointer）。"""
+
+async def close_checkpointer() -> None
+    """关闭连接池并重置 checkpointer（应用关闭时调用）。"""
 
 async def init_db() -> None
     """从 metadata 创建全部表（仅开发用）。"""
@@ -113,7 +124,7 @@ async def drop_db() -> None
 ### `app/main.py` — FastAPI 应用入口
 
 ```python
-app: FastAPI  # 挂载 CORS 中间件 + /api 路由
+app: FastAPI  # 挂载 CORS 中间件 + /api 路由 + lifespan（checkpointer 初始化/关闭）
 
 GET  /        → root()         -> Dict[str, Any]   # 欢迎信息
 GET  /health  → health_check() -> Dict[str, str]   # 健康检查
@@ -306,6 +317,19 @@ class EvaluationTask(Base, TimestampMixin):          # table "evaluation_tasks"
 | `ConfirmDecision` | `application_id: str`, `final_decision: Literal["interview","reject"]`, `override_reason?` |
 | `ConfirmRequest` | `decisions: list[ConfirmDecision]`（为空则按 AI 建议批量更新） |
 | `ConfirmResponse` | `updated_count: int`, `message: str` |
+| `IntentResult` | `intent: Literal["evaluate","help","unknown"]`, `confidence: float (0-1)`, `extracted_params: dict`, `clarifying_question?: str` |
+
+#### `chat.py` — 对话助手 DTO（Phase 2）
+
+| 类名 | 关键字段 |
+|------|---------|
+| `ChatRequest` | `message: str (1-500)` |
+| `ThinkingEvent` | `status: str` |
+| `IntentEvent` | `intent: str`, `params: dict` |
+| `ProgressEvent` | `status: str`, `evaluated_count?: int`, `total_count?: int` |
+| `ErrorEvent` | `message: str`, `recoverable: bool` |
+| `EvaluationSummaryCard` | `type="evaluation_summary"`, `task_id`, `job_title`, `total_count`, `recommended_count`, `rejected_count`, `result_page_url` |
+| `ResultEvent` | `reply_message: str`, `cards?: list[EvaluationSummaryCard]` |
 
 ---
 
@@ -352,6 +376,14 @@ class EvaluationTask(Base, TimestampMixin):          # table "evaluation_tasks"
 | POST | `/evaluate/{job_id}` | 必须 | `trigger_evaluation()` | 触发 AI 评估工作流 |
 | GET | `/task/{task_id}` | 必须 | `get_task_status()` | 查询评估任务状态 |
 | POST | `/confirm/{task_id}` | 必须 | `confirm_evaluation()` | 确认评估结果 |
+
+#### `chat.py` — `/api/chat`（Phase 2）
+
+| 方法 | 路径 | 认证 | 处理器 | 说明 |
+|------|------|------|--------|------|
+| POST | `/send` | 必须 | `send_chat_message()` | 发送消息，返回 SSE 流式响应（`text/event-stream`） |
+
+SSE 事件类型：`thinking`, `intent`, `progress`, `result`, `error`, `done`
 
 #### `deps.py` — 依赖注入
 
@@ -457,16 +489,44 @@ prompts.py    — LLM 提示词模板
                 build_review_user_prompt(job_info, borderline_recommend, borderline_reject, cutoff_score) -> str
 
 nodes.py      — LangGraph 节点实现
-                collect_node(state, db)  -> EvaluationState  # 收集 pending 申请
-                evaluate_node(state, db) -> EvaluationState  # 逐份 LLM 评估
-                screen_node(state, db)   -> EvaluationState  # 按 quota/60 分阈值筛选
-                review_node(state, db)   -> EvaluationState  # LLM 复评边界候选人
-                save_draft_node(state, db) -> EvaluationState # 写入 ai_* 草稿字段
+                collect_node(state)  -> dict   # 收集 pending 申请（db 从 get_config 获取）
+                evaluate_node(state) -> dict   # 逐份 LLM 评估，adispatch_custom_event 进度
+                screen_node(state)   -> dict   # 按 quota/60 分阈值筛选
+                review_node(state)   -> dict   # LLM 复评边界候选人
+                save_draft_node(state) -> dict # 写入 ai_* 草稿字段，含 evaluation_details
 
 graph.py      — 工作流图定义 & 运行
-                build_evaluation_graph() -> StateGraph
+                build_evaluation_graph(checkpointer) -> CompiledStateGraph
                 run_evaluation_workflow(state, db) -> EvaluationState
                 流程：collect → evaluate → screen → review → save_draft → END
+```
+
+#### `conversation/` — LangGraph 对话助手（Phase 2）
+
+```
+__init__.py   — 模块入口，导出 build_conversation_graph
+
+state.py      — ConversationState(TypedDict): 对话工作流状态
+                user_message, current_user_id (输入)
+                intent, extracted_params, clarifying_question (意图识别)
+                task_id, evaluation_status (工作流调用)
+                reply_message, reply_cards, result_page_url (反馈)
+                errors (错误)
+
+prompts.py    — 对话 LLM 提示词
+                INTENT_SYSTEM_PROMPT: 意图识别系统提示（evaluate/help/unknown）
+                build_intent_user_prompt(user_message) -> str
+
+nodes.py      — 对话 LangGraph 节点
+                intent_node(state)    -> dict   # LLM 意图识别，失败回退 unknown
+                dispatch_node(state)  -> dict   # 岗位匹配 + 内联执行评估图 + 进度转发
+                feedback_node(state)  -> dict   # 格式化结果摘要 + 评估卡片
+                route_by_intent(state) -> str   # 条件路由：evaluate→dispatch, else→feedback
+
+graph.py      — 对话图定义
+                build_conversation_graph(checkpointer) -> CompiledStateGraph
+                流程：START → intent → (evaluate? → dispatch → feedback → END)
+                                        (help/unknown? → feedback → END)
 ```
 
 ---
@@ -482,6 +542,8 @@ class BaseLLMProvider(ABC):
     @abstractmethod
     async def review_borderline(self, job_info: dict, borderline_recommend: list[dict], borderline_reject: list[dict], cutoff_score: float) -> list[BorderlineReview]: ...
     @abstractmethod
+    async def recognize_intent(self, user_message: str) -> IntentResult: ...
+    @abstractmethod
     async def close(self) -> None: ...
 ```
 
@@ -492,6 +554,7 @@ class DeepSeekProvider(BaseLLMProvider):
     """基于 httpx.AsyncClient 调用 DeepSeek Chat API；支持 JSON response_format + 自动重试。"""
     async def evaluate_resume(...) -> ResumeEvaluation
     async def review_borderline(...) -> list[BorderlineReview]
+    async def recognize_intent(...) -> IntentResult   # Phase 2: 意图识别
     async def close() -> None  # 关闭 HTTP 客户端
 ```
 
@@ -546,9 +609,12 @@ def decode_token(token: str) -> Dict[str, Any]
 | `test_auth_api.py` | 11 | 注册、登录、令牌刷新、me、登出 |
 | `test_jobs_api.py` | 12 | 岗位 CRUD、权限、筛选、申请计数 |
 | `test_applications_api.py` | 8 | 投递、权限、状态更新 |
-| `test_agent_nodes.py` | 8 | LangGraph 节点单元测试（collect/evaluate/screen/review/save_draft） |
+| `test_agent_nodes.py` | 8 | LangGraph 节点单元测试（mock get_config, adispatch_custom_event） |
 | `test_agent_service.py` | 8 | AgentService 单元测试（trigger/get_status/confirm） |
 | `test_agent_api.py` | 9 | Agent API 集成测试 |
+| `test_intent_recognition.py` | 9 | IntentResult schema 验证 + DeepSeek recognize_intent mock 测试 |
+| `test_conversation_nodes.py` | 10 | 对话节点测试（intent/help/unknown/dispatch/feedback/route） |
+| `test_chat_api.py` | 4 | Chat API 测试（认证、角色、验证、SSE 流） |
 
 ---
 
@@ -567,6 +633,7 @@ def decode_token(token: str) -> Dict[str, Any]
 | `/dashboard` | `JobDashboardPage` | `RecruiterLayout` | recruiter |
 | `/dashboard/post` | `PostJobPage` | `RecruiterLayout` | recruiter |
 | `/dashboard/applicants/:jobId` | `ApplicantsPage` | `RecruiterLayout` | recruiter |
+| `/dashboard/evaluation/:taskId` | `EvaluationResultPage` | `RecruiterLayout` | recruiter |
 
 **路由守卫**：`ProtectedRoute({ children, role? })` — 未登录→跳转 `/login`；角色不匹配→跳转 `/`。
 
@@ -603,9 +670,12 @@ interface CreateJobPayload { title, description, location?, work_type?, salary_m
 type ApplicationStatus = "pending" | "reviewed" | "interview" | "rejected" | "hired"
 interface StructuredResume  { name, work_experience_years, education_level?, contact, work_experience,
                               project_experience, education, certificates, skills, self_evaluation? }
-interface Applicant         { id, applicant_name, resume_text, cover_letter?, structured_resume?, status }
+interface Applicant         { id, applicant_name, resume_text, cover_letter?, structured_resume?, status,
+                              ai_score?, ai_evaluation?, ai_decision?, ai_decision_reason?, ai_evaluated_at? }
 interface MyApplication     { id, job_id, job_title, company_name?, resume_text, cover_letter?, status, created_at }
 interface CreateApplicationPayload { job_id?, resume_text, structured_resume, cover_letter? }
+interface DimensionScore    { name, score, weight, reason }                        // Phase 2
+interface EvaluationDetail  { application_id, applicant_name, ai_score, ai_evaluation, ai_decision, ai_decision_reason } // Phase 2
 ```
 
 ---
@@ -638,6 +708,14 @@ interface CreateApplicationPayload { job_id?, resume_text, structured_resume, co
 | `getApplicationsByJob(jobId)` | GET | `/applications/job/{jobId}` |
 | `updateApplicationStatus(applicantId, status)` | PATCH | `/applications/{applicantId}/status` |
 
+#### 对话助手（Phase 2）
+
+| 函数 | 方法 | 端点 |
+|------|------|------|
+| `getEvaluationTask(taskId)` | GET | `/agent/task/{taskId}` |
+| `confirmEvaluation(taskId, decisions?)` | POST | `/agent/confirm/{taskId}` |
+| `sendChatMessage(message, onEvent, onError, onDone)` | POST | `/chat/send` (SSE) |
+
 #### 共享 HTTP 层（`shared/api/`）
 
 - **`client.ts`** — Axios 实例（baseURL=`/api`，60s 超时）；请求拦截器注入 Bearer token；响应拦截器实现 401 自动刷新 + 请求队列。
@@ -659,6 +737,8 @@ interface CreateApplicationPayload { job_id?, resume_text, structured_resume, co
 | `useApplicantsByJobQuery(jobId?)` | Query | 岗位投递者 |
 | `useCreateApplicationMutation()` | Mutation | 投递简历 → 刷新 applications 缓存 |
 | `useUpdateApplicationStatusMutation(jobId?)` | Mutation | 更新投递状态 → 刷新 applications 缓存 |
+| `useEvaluationTaskQuery(taskId?)` | Query | 评估任务详情（running 时自动轮询 2s） |
+| `useConfirmEvaluationMutation()` | Mutation | 确认评估结果 → 刷新 evaluation + applications 缓存 |
 | `useLoginMutation()` | Mutation | 登录 → setAuth() |
 | `useRegisterMutation()` | Mutation | 注册 → setAuth() |
 | `useLogout()` | Helper | 清除认证 + 跳转 /login |
@@ -707,6 +787,32 @@ interface BreadcrumbItem { label: string; href?: string }
 | `SeekerLayout` | 无（含面包屑 + 顶栏导航） | 求职者布局 |
 | `RecruiterLayout` | 无（含面包屑 + 侧栏导航） | 招聘者布局 |
 
+#### 对话助手组件（`features/chat/components/`，Phase 2）
+
+| 组件 | Props | 说明 |
+|------|-------|------|
+| `ChatBubble` | 无 | 浮动气泡入口（右下角） |
+| `ChatWindow` | `onClose` | 对话窗口（header + messages + input） |
+| `ChatMessages` | `messages: ChatMessage[]` | 消息列表（自动滚动到底部） |
+| `ChatInput` | `onSend, disabled` | 输入框 + 发送按钮 |
+| `AssistantMessage` | `message: ChatMessage` | 助手消息气泡（含进度/卡片） |
+| `ProgressMessage` | `progress: ProgressInfo` | 进度指示器（旋转 + 计数） |
+| `EvaluationCard` | `card: ChatCard` | 可点击的评估摘要卡片 |
+
+#### 对话助手 Hook（`features/chat/hooks/`）
+
+| Hook | 说明 |
+|------|------|
+| `useChat()` | 管理 messages/isProcessing/sendMessage/disconnect/clearMessages；消费 SSE 事件流更新消息 |
+
+#### 对话助手类型（`features/chat/types/chat.ts`）
+
+```ts
+interface ChatMessage  { role: "user"|"assistant", content, cards?: ChatCard[], progress?: ProgressInfo, timestamp }
+interface ChatCard     { type: "evaluation_summary", task_id, job_title, total_count, recommended_count, rejected_count, result_page_url }
+interface ProgressInfo { status, evaluated_count?, total_count? }
+```
+
 shadcn/ui 原子组件（`components/ui/`，18 个）：avatar, badge, breadcrumb, button, card, checkbox, dialog, dropdown-menu, form, input, label, pagination, select, separator, skeleton, table, tabs, textarea。
 
 ---
@@ -716,7 +822,7 @@ shadcn/ui 原子组件（`components/ui/`，18 个）：avatar, badge, breadcrum
 | 文件 | 内容 |
 |------|------|
 | `applicationStatus.ts` | `ApplicationStatus` 类型 + `JOB_STATUS_MAP` / `APPLICATION_STATUS_MAP`（label + className 映射） |
-| `queryKeys.ts` | TanStack Query key 工厂：`jobs.{all, list, detail, recruiterList}`, `applications.{mine, byJob}` |
+| `queryKeys.ts` | TanStack Query key 工厂：`jobs.{all, list, detail, recruiterList}`, `applications.{mine, byJob}`, `evaluation.{task}` |
 
 ---
 
