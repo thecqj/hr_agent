@@ -1,8 +1,11 @@
-"""LangGraph 评估工作流图定义"""
+"""LangGraph 评估工作流图定义 & 执行"""
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from langgraph.graph import StateGraph, END
+from langgraph.graph.state import CompiledStateGraph
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langchain_core.runnables import RunnableConfig
 
 from app.services.agent.state import EvaluationState
 from app.services.agent.nodes import (
@@ -14,24 +17,24 @@ from app.services.agent.nodes import (
 )
 
 
-def build_evaluation_graph() -> StateGraph:  # type: ignore[type-arg]
-    """构建评估工作流图
+def build_evaluation_graph(
+    checkpointer: AsyncPostgresSaver,
+) -> CompiledStateGraph:  # type: ignore[type-arg]
+    """构建评估工作流图并编译
 
     流程：collect → evaluate → screen → review → save_draft → END
 
-    Note: add_node 的 type: ignore[call-overload] 是因为我们的节点函数
-    签名 (EvaluationState, AsyncSession) 与 LangGraph 期望的
-    (EvaluationState,) 不匹配。Phase 1 采用手动顺序调用方式，
-    graph 定义仅供参考；Phase 2 会引入 checkpoint 后重构签名。
+    Args:
+        checkpointer: LangGraph PostgreSQL 持久化存储
     """
     graph = StateGraph(EvaluationState)
 
     # 添加节点
-    graph.add_node("collect", collect_node)  # type: ignore[call-overload]
-    graph.add_node("evaluate", evaluate_node)  # type: ignore[call-overload]
-    graph.add_node("screen", screen_node)  # type: ignore[call-overload]
-    graph.add_node("review", review_node)  # type: ignore[call-overload]
-    graph.add_node("save_draft", save_draft_node)  # type: ignore[call-overload]
+    graph.add_node("collect", collect_node)
+    graph.add_node("evaluate", evaluate_node)
+    graph.add_node("screen", screen_node)
+    graph.add_node("review", review_node)
+    graph.add_node("save_draft", save_draft_node)
 
     # 设置入口
     graph.set_entry_point("collect")
@@ -43,40 +46,32 @@ def build_evaluation_graph() -> StateGraph:  # type: ignore[type-arg]
     graph.add_edge("review", "save_draft")
     graph.add_edge("save_draft", END)
 
-    return graph
+    return graph.compile(checkpointer=checkpointer)
 
 
 async def run_evaluation_workflow(
     state: EvaluationState,
     db: AsyncSession,
 ) -> EvaluationState:
-    """执行完整的评估工作流
+    """执行完整的评估工作流（通过 LangGraph 图引擎）
 
-    由于 LangGraph 的节点函数签名需要 db session，
-    我们手动依次执行各节点（Phase 1 简化方案）。
-    LangGraph checkpoint 等高级特性在 Phase 2 补充。
+    使用 ainvoke 执行图，db session 通过 configurable 传入。
+    对于需要 SSE 流式事件的场景，直接使用 build_evaluation_graph()
+    配合 astream_events() 调用。
     """
-    # collect
-    state = await collect_node(state, db)
+    from app.database import get_checkpointer
 
-    # 如果 collect 阶段出现致命错误（没有申请），直接返回
-    if not state.get("applications"):
-        return state
+    checkpointer = get_checkpointer()
+    graph = build_evaluation_graph(checkpointer)
 
-    # evaluate
-    state = await evaluate_node(state, db)
+    config: RunnableConfig = {
+        "configurable": {
+            "thread_id": state.get("task_id", "default"),
+            "db": db,
+        }
+    }
 
-    # 如果所有评估都失败，直接返回
-    if not state.get("evaluation_results"):
-        return state
+    result: dict[str, object] = await graph.ainvoke(state, config=config)
 
-    # screen
-    state = await screen_node(state, db)
-
-    # review
-    state = await review_node(state, db)
-
-    # save_draft
-    state = await save_draft_node(state, db)
-
-    return state
+    # ainvoke 返回完整状态 dict，类型兼容 EvaluationState
+    return result  # type: ignore[return-value]

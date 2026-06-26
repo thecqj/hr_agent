@@ -25,6 +25,7 @@ httpx
 # Workflow
 langgraph
 langchain-core
+langgraph-checkpoint-postgres
 
 # Testing
 pytest

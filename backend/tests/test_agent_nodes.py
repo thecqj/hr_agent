@@ -14,6 +14,32 @@ from app.services.agent.state import EvaluationState
 from app.schemas.agent import ResumeEvaluation, DimensionScore
 
 
+# ── 共享 fixture ──────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def mock_get_config(mock_db: AsyncMock) -> MagicMock:
+    """Mock get_config() for all node tests — nodes get db from config now."""
+    with patch("app.services.agent.nodes.get_config", return_value={"configurable": {"db": mock_db}}) as m:
+        yield m
+
+
+@pytest.fixture(autouse=True)
+def mock_adispatch() -> MagicMock:
+    """Mock adispatch_custom_event to avoid LangGraph callback errors in tests."""
+    with patch("app.services.agent.nodes.adispatch_custom_event", new_callable=AsyncMock) as m:
+        yield m
+
+
+@pytest.fixture
+def mock_db() -> AsyncMock:
+    """Provide a shared mock db session for node tests."""
+    db = AsyncMock()
+    mock_task = MagicMock()
+    db.get.return_value = mock_task
+    return db
+
+
 # ── screen_node 测试 ─────────────────────────────────────────
 
 
@@ -30,7 +56,7 @@ async def test_screen_node_with_quota() -> None:
         "job_info": {"interview_quota": 2},
     }
 
-    result = await screen_node(state, AsyncMock())
+    result = await screen_node(state)
 
     screening = cast(dict[str, Any], result["screening_result"])
     assert len(screening["recommend_list"]) == 2
@@ -50,7 +76,7 @@ async def test_screen_node_without_quota() -> None:
         "job_info": {"interview_quota": None},
     }
 
-    result = await screen_node(state, AsyncMock())
+    result = await screen_node(state)
 
     screening = cast(dict[str, Any], result["screening_result"])
     assert len(screening["recommend_list"]) == 1
@@ -66,7 +92,7 @@ async def test_screen_node_empty_results() -> None:
         "job_info": {},
     }
 
-    result = await screen_node(state, AsyncMock())
+    result = await screen_node(state)
 
     screening = cast(dict[str, Any], result["screening_result"])
     assert screening["recommend_list"] == []
@@ -96,10 +122,6 @@ async def test_evaluate_node_success() -> None:
     mock_provider.evaluate_resume.return_value = mock_evaluation
     mock_provider.close = AsyncMock()
 
-    mock_db = AsyncMock()
-    mock_task = MagicMock()
-    mock_db.get.return_value = mock_task
-
     state: EvaluationState = {
         "job_info": {"title": "前端工程师", "skills_required": ["React"]},
         "applications": [
@@ -117,7 +139,7 @@ async def test_evaluate_node_success() -> None:
 
     with patch("app.services.agent.nodes._get_llm_provider", return_value=mock_provider):
         with patch("app.services.agent.nodes.asyncio.sleep", new_callable=AsyncMock):
-            result = await evaluate_node(state, mock_db)
+            result = await evaluate_node(state)
 
     eval_results = cast(list[dict[str, Any]], result["evaluation_results"])
     assert len(eval_results) == 1
@@ -142,10 +164,6 @@ async def test_evaluate_node_llm_failure_skips_resume() -> None:
     ]
     mock_provider.close = AsyncMock()
 
-    mock_db = AsyncMock()
-    mock_task = MagicMock()
-    mock_db.get.return_value = mock_task
-
     state: EvaluationState = {
         "job_info": {"title": "工程师"},
         "applications": [
@@ -160,7 +178,7 @@ async def test_evaluate_node_llm_failure_skips_resume() -> None:
 
     with patch("app.services.agent.nodes._get_llm_provider", return_value=mock_provider):
         with patch("app.services.agent.nodes.asyncio.sleep", new_callable=AsyncMock):
-            result = await evaluate_node(state, mock_db)
+            result = await evaluate_node(state)
 
     # 第一份跳过，第二份成功
     eval_results = cast(list[dict[str, Any]], result["evaluation_results"])
@@ -189,7 +207,7 @@ async def test_review_node_no_borderline() -> None:
         "errors": [],
     }
 
-    result = await review_node(state, AsyncMock())
+    result = await review_node(state)
 
     assert result["review_adjustments"] == []
 
@@ -239,7 +257,7 @@ async def test_review_node_with_borderline() -> None:
     }
 
     with patch("app.services.agent.nodes._get_llm_provider", return_value=mock_provider):
-        result = await review_node(state, AsyncMock())
+        result = await review_node(state)
 
     adjustments = cast(list[dict[str, Any]], result["review_adjustments"])
     assert len(adjustments) == 1
@@ -282,7 +300,7 @@ async def test_review_node_failure_falls_back() -> None:
     }
 
     with patch("app.services.agent.nodes._get_llm_provider", return_value=mock_provider):
-        result = await review_node(state, AsyncMock())
+        result = await review_node(state)
 
     assert result["review_adjustments"] == []
     assert len(result["errors"]) == 1

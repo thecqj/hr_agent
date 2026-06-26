@@ -37,6 +37,22 @@ export interface Certificate {
   date?: string;
 }
 
+export interface DimensionScore {
+  name: string;
+  score: number;
+  weight: number;
+  reason: string;
+}
+
+export interface EvaluationDetail {
+  application_id: string;
+  applicant_name: string;
+  ai_score: number;
+  ai_evaluation: DimensionScore[];
+  ai_decision: "recommend" | "reject" | "neutral";
+  ai_decision_reason: string;
+}
+
 export interface StructuredResume {
   name: string;
   work_experience_years: number;
@@ -57,6 +73,12 @@ export interface Applicant {
   cover_letter?: string;
   structured_resume?: StructuredResume;
   status: ApplicationStatus;
+  // AI evaluation fields (Phase 2)
+  ai_score?: number;
+  ai_evaluation?: DimensionScore[];
+  ai_decision?: string;
+  ai_decision_reason?: string;
+  ai_evaluated_at?: string;
 }
 
 export interface MyApplication {

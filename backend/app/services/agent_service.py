@@ -110,7 +110,7 @@ async def _run_workflow_background(
     triggered_by: str,
     interview_quota_override: int | None = None,
 ) -> None:
-    """后台执行评估工作流"""
+    """后台执行评估工作流（通过 LangGraph 图引擎）"""
     from app.database import async_session
     from app.services.agent.graph import run_evaluation_workflow
 
@@ -126,7 +126,6 @@ async def _run_workflow_background(
             await run_evaluation_workflow(initial_state, db)
         except Exception as exc:
             logger.exception("评估工作流异常: task_id=%s", task_id)
-            # 标记任务失败
             task = await db.get(EvaluationTask, task_id)
             if task and task.status not in (
                 EvalTaskStatus.COMPLETED,

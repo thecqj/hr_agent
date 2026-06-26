@@ -6,7 +6,7 @@ import httpx
 
 from app.config import settings
 from app.llm.base import BaseLLMProvider
-from app.schemas.agent import BorderlineReview, ResumeEvaluation
+from app.schemas.agent import BorderlineReview, IntentResult, ResumeEvaluation
 
 
 class DeepSeekProvider(BaseLLMProvider):
@@ -114,3 +114,21 @@ class DeepSeekProvider(BaseLLMProvider):
         # API 返回 {"reviews": [...]}
         reviews = raw.get("reviews", [])
         return [BorderlineReview.model_validate(r) for r in reviews]
+
+    async def recognize_intent(
+        self,
+        user_message: str,
+    ) -> IntentResult:
+        """识别用户消息的意图和参数"""
+        from app.services.conversation.prompts import (
+            INTENT_SYSTEM_PROMPT,
+            build_intent_user_prompt,
+        )
+
+        system_prompt = INTENT_SYSTEM_PROMPT
+        user_prompt = build_intent_user_prompt(user_message)
+
+        raw = await self._call_chat(
+            system_prompt, user_prompt, retries=settings.LLM_EVALUATION_RETRIES
+        )
+        return IntentResult.model_validate(raw)

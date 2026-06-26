@@ -9,4 +9,7 @@ export const queryKeys = {
     mine: (params?: object) => ["applications", "mine", params ?? {}] as const,
     byJob: (jobId: string) => ["applications", "job", jobId] as const,
   },
-};
+  evaluation: {
+    task: (taskId: string) => ["evaluation", "task", taskId] as const,
+  },
+} as const;
