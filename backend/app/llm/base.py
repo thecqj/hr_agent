@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from app.schemas.agent import BorderlineReview, ResumeEvaluation
+from app.schemas.agent import BorderlineReview, IntentResult, ResumeEvaluation
 
 
 class BaseLLMProvider(ABC):
@@ -25,6 +25,14 @@ class BaseLLMProvider(ABC):
         cutoff_score: float,
     ) -> list[BorderlineReview]:
         """复评边界候选人"""
+        ...
+
+    @abstractmethod
+    async def recognize_intent(
+        self,
+        user_message: str,
+    ) -> IntentResult:
+        """识别用户消息的意图和参数"""
         ...
 
     @abstractmethod

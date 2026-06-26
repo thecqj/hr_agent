@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { useAuthStore } from "@/features/auth/store/authStore";
 import ApplicantsPage from "@/pages/ApplicantsPage";
 import ApplyPage from "@/pages/ApplyPage";
+import EvaluationResultPage from "@/pages/EvaluationResultPage";
 import JobDashboardPage from "@/pages/JobDashboardPage";
 import JobDetailPage from "@/pages/JobDetailPage";
 import JobMarketPage from "@/pages/JobMarketPage";
@@ -84,6 +85,14 @@ export default function App() {
             element={
               <ProtectedRoute role="recruiter">
                 <ApplicantsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dashboard/evaluation/:taskId"
+            element={
+              <ProtectedRoute role="recruiter">
+                <EvaluationResultPage />
               </ProtectedRoute>
             }
           />
