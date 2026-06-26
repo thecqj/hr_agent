@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Optional, Any, TYPE_CHECKING
 
-from sqlalchemy import String, Text, Enum, ForeignKey
+from sqlalchemy import String, Text, Enum, ForeignKey, Float, DateTime
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 
@@ -40,6 +40,13 @@ class Application(Base, TimestampMixin):
         Enum(ApplicationStatus),
         default=ApplicationStatus.PENDING,
     )
+
+    # AI 评估结果（草稿字段，确认前不影响业务状态）
+    ai_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    ai_evaluation: Mapped[Optional[Any]] = mapped_column(JSONB, nullable=True)
+    ai_decision: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    ai_decision_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    ai_evaluated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # 关联
     job: Mapped["Job"] = relationship("Job", back_populates="applications")

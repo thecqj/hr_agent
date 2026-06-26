@@ -8,7 +8,7 @@ async def test_create_job_as_recruiter(
 ) -> None:
     """招聘者创建职位成功"""
     resp = await client.post(
-        "/api/v1/jobs/",
+        "/api/jobs/",
         json={
             "title": "Python 开发工程师",
             "description": "负责后端开发",
@@ -33,7 +33,7 @@ async def test_create_job_as_seeker_forbidden(
 ) -> None:
     """求职者创建职位失败"""
     resp = await client.post(
-        "/api/v1/jobs/",
+        "/api/jobs/",
         json={
             "title": "不应该创建",
             "description": "测试",
@@ -51,24 +51,24 @@ async def test_list_jobs_default_filter(
     """列出职位 — 默认只返回 active"""
     # 创建一个 active 职位
     await client.post(
-        "/api/v1/jobs/",
+        "/api/jobs/",
         json={"title": "Active Job", "description": "desc", "work_type": "onsite"},
         headers=auth_headers_recruiter,
     )
     # 创建后关闭一个
     create_resp = await client.post(
-        "/api/v1/jobs/",
+        "/api/jobs/",
         json={"title": "To Close", "description": "desc", "work_type": "onsite"},
         headers=auth_headers_recruiter,
     )
     job_id = create_resp.json()["id"]
     await client.patch(
-        f"/api/v1/jobs/{job_id}/status",
+        f"/api/jobs/{job_id}/status",
         json={"status": "closed"},
         headers=auth_headers_recruiter,
     )
 
-    resp = await client.get("/api/v1/jobs/", headers=auth_headers_recruiter)
+    resp = await client.get("/api/jobs/", headers=auth_headers_recruiter)
     assert resp.status_code == 200
     data = resp.json()
     assert data["total"] >= 1
@@ -83,18 +83,18 @@ async def test_list_jobs_keyword_search(
 ) -> None:
     """列出职位 — 关键词搜索"""
     await client.post(
-        "/api/v1/jobs/",
+        "/api/jobs/",
         json={"title": "Go 开发", "description": "云原生开发", "work_type": "remote"},
         headers=auth_headers_recruiter,
     )
     await client.post(
-        "/api/v1/jobs/",
+        "/api/jobs/",
         json={"title": "Java 开发", "description": "企业级应用", "work_type": "onsite"},
         headers=auth_headers_recruiter,
     )
 
     resp = await client.get(
-        "/api/v1/jobs/", params={"keyword": "Go"}, headers=auth_headers_recruiter
+        "/api/jobs/", params={"keyword": "Go"}, headers=auth_headers_recruiter
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -109,7 +109,7 @@ async def test_list_jobs_salary_filter(
 ) -> None:
     """列出职位 — 薪资范围过滤"""
     await client.post(
-        "/api/v1/jobs/",
+        "/api/jobs/",
         json={
             "title": "高薪岗位",
             "description": "desc",
@@ -121,7 +121,7 @@ async def test_list_jobs_salary_filter(
     )
 
     resp = await client.get(
-        "/api/v1/jobs/",
+        "/api/jobs/",
         params={"salary_min": 25, "salary_max": 55},
         headers=auth_headers_recruiter,
     )
@@ -140,13 +140,13 @@ async def test_get_job_detail(
 ) -> None:
     """获取单个职位"""
     create_resp = await client.post(
-        "/api/v1/jobs/",
+        "/api/jobs/",
         json={"title": "详情测试", "description": "详情desc", "work_type": "hybrid"},
         headers=auth_headers_recruiter,
     )
     job_id = create_resp.json()["id"]
 
-    resp = await client.get(f"/api/v1/jobs/{job_id}")
+    resp = await client.get(f"/api/jobs/{job_id}")
     assert resp.status_code == 200
     assert resp.json()["title"] == "详情测试"
     assert resp.json()["work_type"] == "hybrid"
@@ -155,7 +155,7 @@ async def test_get_job_detail(
 @pytest.mark.asyncio
 async def test_get_job_not_found(client: AsyncClient) -> None:
     """获取不存在的职位"""
-    resp = await client.get("/api/v1/jobs/00000000-0000-0000-0000-000000000000")
+    resp = await client.get("/api/jobs/00000000-0000-0000-0000-000000000000")
     assert resp.status_code == 404
 
 
@@ -165,14 +165,14 @@ async def test_update_own_job(
 ) -> None:
     """招聘者更新自己的职位"""
     create_resp = await client.post(
-        "/api/v1/jobs/",
+        "/api/jobs/",
         json={"title": "更新前", "description": "desc", "work_type": "onsite"},
         headers=auth_headers_recruiter,
     )
     job_id = create_resp.json()["id"]
 
     resp = await client.put(
-        f"/api/v1/jobs/{job_id}",
+        f"/api/jobs/{job_id}",
         json={"title": "更新后"},
         headers=auth_headers_recruiter,
     )
@@ -187,7 +187,7 @@ async def test_update_other_job_forbidden(
     """更新他人职位失败"""
     # 先用 recruiter 创建一个职位
     create_resp = await client.post(
-        "/api/v1/jobs/",
+        "/api/jobs/",
         json={"title": "别人的", "description": "desc", "work_type": "onsite"},
         headers=auth_headers_recruiter,
     )
@@ -195,7 +195,7 @@ async def test_update_other_job_forbidden(
 
     # 注册另一个招聘者尝试更新
     reg_resp = await client.post(
-        "/api/v1/auth/register",
+        "/api/auth/register",
         json={
             "email": "other_recruiter@test.com",
             "password": "testpass123",
@@ -207,7 +207,7 @@ async def test_update_other_job_forbidden(
     other_headers = {"Authorization": f"Bearer {other_token}"}
 
     resp = await client.put(
-        f"/api/v1/jobs/{job_id}",
+        f"/api/jobs/{job_id}",
         json={"title": "篡改"},
         headers=other_headers,
     )
@@ -220,17 +220,17 @@ async def test_delete_own_job(
 ) -> None:
     """删除自己的职位"""
     create_resp = await client.post(
-        "/api/v1/jobs/",
+        "/api/jobs/",
         json={"title": "待删除", "description": "desc", "work_type": "onsite"},
         headers=auth_headers_recruiter,
     )
     job_id = create_resp.json()["id"]
 
-    resp = await client.delete(f"/api/v1/jobs/{job_id}", headers=auth_headers_recruiter)
+    resp = await client.delete(f"/api/jobs/{job_id}", headers=auth_headers_recruiter)
     assert resp.status_code == 200
 
     # 确认已删除
-    get_resp = await client.get(f"/api/v1/jobs/{job_id}")
+    get_resp = await client.get(f"/api/jobs/{job_id}")
     assert get_resp.status_code == 404
 
 
@@ -240,7 +240,7 @@ async def test_delete_other_job_forbidden(
 ) -> None:
     """删除他人职位失败"""
     create_resp = await client.post(
-        "/api/v1/jobs/",
+        "/api/jobs/",
         json={"title": "不可删", "description": "desc", "work_type": "onsite"},
         headers=auth_headers_recruiter,
     )
@@ -248,7 +248,7 @@ async def test_delete_other_job_forbidden(
 
     # 注册另一个招聘者
     reg_resp = await client.post(
-        "/api/v1/auth/register",
+        "/api/auth/register",
         json={
             "email": "deleter@test.com",
             "password": "testpass123",
@@ -258,7 +258,7 @@ async def test_delete_other_job_forbidden(
     )
     other_headers = {"Authorization": f"Bearer {reg_resp.json()['access_token']}"}
 
-    resp = await client.delete(f"/api/v1/jobs/{job_id}", headers=other_headers)
+    resp = await client.delete(f"/api/jobs/{job_id}", headers=other_headers)
     assert resp.status_code == 403
 
 
@@ -268,14 +268,14 @@ async def test_update_job_status(
 ) -> None:
     """更新职位状态"""
     create_resp = await client.post(
-        "/api/v1/jobs/",
+        "/api/jobs/",
         json={"title": "状态测试", "description": "desc", "work_type": "onsite"},
         headers=auth_headers_recruiter,
     )
     job_id = create_resp.json()["id"]
 
     resp = await client.patch(
-        f"/api/v1/jobs/{job_id}/status",
+        f"/api/jobs/{job_id}/status",
         json={"status": "closed"},
         headers=auth_headers_recruiter,
     )
@@ -290,7 +290,7 @@ async def test_applications_count_reflects_real_count(
     """岗位的 applications_count 应反映实际投递数"""
     # 1. 招聘者创建岗位
     create_resp = await client.post(
-        "/api/v1/jobs/",
+        "/api/jobs/",
         json={"title": "计数测试", "description": "desc", "work_type": "onsite"},
         headers=auth_headers_recruiter,
     )
@@ -301,7 +301,7 @@ async def test_applications_count_reflects_real_count(
 
     # 2. 注册求职者并投递
     reg_resp = await client.post(
-        "/api/v1/auth/register",
+        "/api/auth/register",
         json={
             "email": "count_seeker@test.com",
             "password": "testpass123",
@@ -313,7 +313,7 @@ async def test_applications_count_reflects_real_count(
     seeker_headers = {"Authorization": f"Bearer {seeker_token}"}
 
     apply_resp = await client.post(
-        "/api/v1/applications/",
+        "/api/applications/",
         json={"job_id": job_id, "resume_text": "测试简历"},
         headers=seeker_headers,
     )
@@ -321,7 +321,7 @@ async def test_applications_count_reflects_real_count(
 
     # 3. 招聘者再次查询岗位列表，applications_count 应为 1
     list_resp = await client.get(
-        "/api/v1/jobs/",
+        "/api/jobs/",
         params={"status": "all"},
         headers=auth_headers_recruiter,
     )
@@ -332,6 +332,6 @@ async def test_applications_count_reflects_real_count(
     assert target["applications_count"] == 1
 
     # 4. 查询岗位详情，applications_count 也应为 1
-    detail_resp = await client.get(f"/api/v1/jobs/{job_id}")
+    detail_resp = await client.get(f"/api/jobs/{job_id}")
     assert detail_resp.status_code == 200
     assert detail_resp.json()["applications_count"] == 1

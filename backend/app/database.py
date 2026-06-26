@@ -1,5 +1,10 @@
 from collections.abc import AsyncGenerator
+from typing import Any
 
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from psycopg import AsyncConnection
+from psycopg.rows import dict_row
+from psycopg_pool import AsyncConnectionPool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import settings
@@ -47,3 +52,56 @@ async def drop_db() -> None:
     """删除数据库表（仅开发调试使用）。"""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+
+
+# ── LangGraph Checkpointer ──────────────────────────────────
+
+_checkpointer: AsyncPostgresSaver | None = None
+_pool: AsyncConnectionPool[AsyncConnection[dict[str, Any]]] | None = None
+
+
+async def init_checkpointer() -> AsyncPostgresSaver:
+    """Initialize and return the LangGraph PostgreSQL checkpointer."""
+    global _checkpointer, _pool
+    # Strip SQLAlchemy driver from URL: postgresql+psycopg:// → postgresql://
+    db_url = settings.DATABASE_URL.replace("+psycopg", "")
+    # Pass autocommit=True and prepare_threshold=0 via kwargs so each
+    # connection is created with these settings from the start.
+    # This matches AsyncPostgresSaver.from_conn_string() behavior:
+    #   - autocommit=True: required because setup() runs CREATE INDEX
+    #     CONCURRENTLY which cannot execute inside a transaction block;
+    #     the checkpointer manages its own transactions via conn.transaction().
+    #   - prepare_threshold=0: avoids prepared-statement issues with
+    #     connection pooling (statements may be prepared on one connection
+    #     but executed on another after recycling).
+    _pool = AsyncConnectionPool(
+        conninfo=db_url,
+        kwargs={
+            "row_factory": dict_row,
+            "autocommit": True,
+            "prepare_threshold": 0,
+        },
+        open=False,
+    )
+    # Explicitly open the pool (avoids deprecation warning from
+    # the constructor's default auto-open behavior)
+    await _pool.open()
+    _checkpointer = AsyncPostgresSaver(conn=_pool)
+    await _checkpointer.setup()
+    return _checkpointer
+
+
+async def close_checkpointer() -> None:
+    """Close the checkpointer's connection pool (call on shutdown)."""
+    global _checkpointer, _pool
+    if _pool is not None:
+        await _pool.close()
+    _checkpointer = None
+    _pool = None
+
+
+def get_checkpointer() -> AsyncPostgresSaver:
+    """Return the initialized checkpointer (call after init_checkpointer)."""
+    if _checkpointer is None:
+        raise RuntimeError("Checkpointer not initialized — call init_checkpointer() first")
+    return _checkpointer

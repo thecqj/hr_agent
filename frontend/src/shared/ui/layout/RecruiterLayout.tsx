@@ -14,6 +14,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { useAuthStore } from "@/features/auth/store/authStore";
 import { useLogout } from "@/features/auth/hooks/useLogout";
+import { ChatBubble } from "@/features/chat/components/ChatBubble";
 import { cn } from "@/lib/utils";
 import { BreadcrumbProvider, useBreadcrumb } from "./breadcrumb-context";
 
@@ -117,6 +118,7 @@ function RecruiterLayoutInner() {
           <Outlet />
         </main>
       </div>
+      <ChatBubble />
     </div>
   );
 }

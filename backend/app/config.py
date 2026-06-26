@@ -34,5 +34,14 @@ class Settings(BaseSettings):
         ]
     )
 
+    # LLM Configuration
+    LLM_PROVIDER: str = "deepseek"
+    DEEPSEEK_API_KEY: str = ""
+    DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
+    DEEPSEEK_MODEL: str = "deepseek-chat"
+    LLM_REQUESTS_PER_MINUTE: int = 30
+    LLM_EVALUATION_RETRIES: int = 1
+    LLM_BORDERLINE_RANGE: float = 10.0
+
 
 settings = Settings()

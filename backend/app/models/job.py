@@ -41,6 +41,7 @@ class Job(Base, TimestampMixin):
     work_type: Mapped[WorkType] = mapped_column(Enum(WorkType), default=WorkType.ONSITE)
     skills_required: Mapped[list[str]] = mapped_column(JSON, default=list)
     status: Mapped[JobStatus] = mapped_column(Enum(JobStatus), default=JobStatus.ACTIVE)
+    interview_quota: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     # 关联
     recruiter: Mapped["User"] = relationship("User", back_populates="jobs", foreign_keys=[recruiter_id])

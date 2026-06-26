@@ -6,7 +6,7 @@ from httpx import AsyncClient
 async def test_register_seeker(client: AsyncClient) -> None:
     """注册求职者成功"""
     resp = await client.post(
-        "/api/v1/auth/register",
+        "/api/auth/register",
         json={
             "email": "seeker_new@test.com",
             "password": "testpass123",
@@ -27,7 +27,7 @@ async def test_register_seeker(client: AsyncClient) -> None:
 async def test_register_recruiter(client: AsyncClient) -> None:
     """注册招聘者成功"""
     resp = await client.post(
-        "/api/v1/auth/register",
+        "/api/auth/register",
         json={
             "email": "recruiter_new@test.com",
             "password": "testpass123",
@@ -50,10 +50,10 @@ async def test_register_duplicate_email(client: AsyncClient) -> None:
         "name": "重复用户",
         "role": "job_seeker",
     }
-    resp1 = await client.post("/api/v1/auth/register", json=payload)
+    resp1 = await client.post("/api/auth/register", json=payload)
     assert resp1.status_code == 201
 
-    resp2 = await client.post("/api/v1/auth/register", json=payload)
+    resp2 = await client.post("/api/auth/register", json=payload)
     assert resp2.status_code == 409
 
 
@@ -62,7 +62,7 @@ async def test_login_success(client: AsyncClient) -> None:
     """登录成功"""
     # 先注册
     await client.post(
-        "/api/v1/auth/register",
+        "/api/auth/register",
         json={
             "email": "login@test.com",
             "password": "testpass123",
@@ -72,7 +72,7 @@ async def test_login_success(client: AsyncClient) -> None:
     )
     # 再登录
     resp = await client.post(
-        "/api/v1/auth/login",
+        "/api/auth/login",
         json={"email": "login@test.com", "password": "testpass123"},
     )
     assert resp.status_code == 200
@@ -86,7 +86,7 @@ async def test_login_success(client: AsyncClient) -> None:
 async def test_login_wrong_password(client: AsyncClient) -> None:
     """登录密码错误"""
     await client.post(
-        "/api/v1/auth/register",
+        "/api/auth/register",
         json={
             "email": "wrongpw@test.com",
             "password": "testpass123",
@@ -95,7 +95,7 @@ async def test_login_wrong_password(client: AsyncClient) -> None:
         },
     )
     resp = await client.post(
-        "/api/v1/auth/login",
+        "/api/auth/login",
         json={"email": "wrongpw@test.com", "password": "wrongpassword"},
     )
     assert resp.status_code == 401
@@ -105,7 +105,7 @@ async def test_login_wrong_password(client: AsyncClient) -> None:
 async def test_login_nonexistent_user(client: AsyncClient) -> None:
     """登录不存在的用户"""
     resp = await client.post(
-        "/api/v1/auth/login",
+        "/api/auth/login",
         json={"email": "nobody@test.com", "password": "testpass123"},
     )
     assert resp.status_code == 401
@@ -115,7 +115,7 @@ async def test_login_nonexistent_user(client: AsyncClient) -> None:
 async def test_refresh_token_success(client: AsyncClient) -> None:
     """刷新 token 成功"""
     reg_resp = await client.post(
-        "/api/v1/auth/register",
+        "/api/auth/register",
         json={
             "email": "refresh@test.com",
             "password": "testpass123",
@@ -126,7 +126,7 @@ async def test_refresh_token_success(client: AsyncClient) -> None:
     refresh_token = reg_resp.json()["refresh_token"]
 
     resp = await client.post(
-        "/api/v1/auth/refresh",
+        "/api/auth/refresh",
         json={"refresh_token": refresh_token},
     )
     assert resp.status_code == 200
@@ -139,7 +139,7 @@ async def test_refresh_token_success(client: AsyncClient) -> None:
 async def test_refresh_token_invalid(client: AsyncClient) -> None:
     """刷新 token 无效"""
     resp = await client.post(
-        "/api/v1/auth/refresh",
+        "/api/auth/refresh",
         json={"refresh_token": "invalid.token.here"},
     )
     assert resp.status_code == 401
@@ -149,7 +149,7 @@ async def test_refresh_token_invalid(client: AsyncClient) -> None:
 async def test_get_me_success(client: AsyncClient) -> None:
     """获取当前用户信息"""
     reg_resp = await client.post(
-        "/api/v1/auth/register",
+        "/api/auth/register",
         json={
             "email": "me@test.com",
             "password": "testpass123",
@@ -160,7 +160,7 @@ async def test_get_me_success(client: AsyncClient) -> None:
     token = reg_resp.json()["access_token"]
 
     resp = await client.get(
-        "/api/v1/auth/me",
+        "/api/auth/me",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 200
@@ -172,7 +172,7 @@ async def test_get_me_success(client: AsyncClient) -> None:
 @pytest.mark.asyncio
 async def test_get_me_unauthorized(client: AsyncClient) -> None:
     """未登录访问 /me"""
-    resp = await client.get("/api/v1/auth/me")
+    resp = await client.get("/api/auth/me")
     assert resp.status_code == 401
 
 
@@ -180,7 +180,7 @@ async def test_get_me_unauthorized(client: AsyncClient) -> None:
 async def test_logout_success(client: AsyncClient) -> None:
     """登出成功"""
     reg_resp = await client.post(
-        "/api/v1/auth/register",
+        "/api/auth/register",
         json={
             "email": "logout@test.com",
             "password": "testpass123",
@@ -191,7 +191,7 @@ async def test_logout_success(client: AsyncClient) -> None:
     token = reg_resp.json()["access_token"]
 
     resp = await client.post(
-        "/api/v1/auth/logout",
+        "/api/auth/logout",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 200

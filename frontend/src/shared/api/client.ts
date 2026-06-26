@@ -3,7 +3,7 @@ import axios from "axios";
 import { useAuthStore } from "@/features/auth/store/authStore";
 
 export const apiClient = axios.create({
-  baseURL: "/api/v1",
+  baseURL: "/api",
   timeout: 60000,
   headers: { "Content-Type": "application/json" },
 });
@@ -59,7 +59,7 @@ apiClient.interceptors.response.use(
       }
 
       try {
-        const res = await axios.post("/api/v1/auth/refresh", {
+        const res = await axios.post("/api/auth/refresh", {
           refresh_token: refreshToken,
         });
         const { access_token, refresh_token } = res.data;

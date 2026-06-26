@@ -84,6 +84,12 @@ class ApplicationResponse(BaseModel):
     cover_letter: Optional[str] = None
     structured_resume: Optional[dict[str, Any]] = None
     status: ApplicationStatus
+    # AI 评估结果
+    ai_score: Optional[float] = None
+    ai_evaluation: Optional[dict[str, Any]] = None
+    ai_decision: Optional[str] = None
+    ai_decision_reason: Optional[str] = None
+    ai_evaluated_at: Optional[datetime] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -1,3 +1,5 @@
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from typing import Dict, Any
 
 from fastapi import FastAPI
@@ -5,6 +7,16 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import api_router
 from app.config import settings
+from app.database import close_checkpointer, init_checkpointer
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    # Startup
+    await init_checkpointer()
+    yield
+    # Shutdown
+    await close_checkpointer()
 
 
 app = FastAPI(
@@ -12,6 +24,7 @@ app = FastAPI(
     version=settings.APP_VERSION,
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -22,7 +35,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 统一挂载 /api/v1 路由
+# 统一挂载 /api 路由
 app.include_router(api_router)
 
 
