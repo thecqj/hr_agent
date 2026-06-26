@@ -65,11 +65,27 @@ async def init_checkpointer() -> AsyncPostgresSaver:
     global _checkpointer, _pool
     # Strip SQLAlchemy driver from URL: postgresql+psycopg:// → postgresql://
     db_url = settings.DATABASE_URL.replace("+psycopg", "")
+    # Pass autocommit=True and prepare_threshold=0 via kwargs so each
+    # connection is created with these settings from the start.
+    # This matches AsyncPostgresSaver.from_conn_string() behavior:
+    #   - autocommit=True: required because setup() runs CREATE INDEX
+    #     CONCURRENTLY which cannot execute inside a transaction block;
+    #     the checkpointer manages its own transactions via conn.transaction().
+    #   - prepare_threshold=0: avoids prepared-statement issues with
+    #     connection pooling (statements may be prepared on one connection
+    #     but executed on another after recycling).
     _pool = AsyncConnectionPool(
         conninfo=db_url,
-        kwargs={"row_factory": dict_row},
-        open=True,
+        kwargs={
+            "row_factory": dict_row,
+            "autocommit": True,
+            "prepare_threshold": 0,
+        },
+        open=False,
     )
+    # Explicitly open the pool (avoids deprecation warning from
+    # the constructor's default auto-open behavior)
+    await _pool.open()
     _checkpointer = AsyncPostgresSaver(conn=_pool)
     await _checkpointer.setup()
     return _checkpointer
