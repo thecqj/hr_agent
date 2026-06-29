@@ -198,7 +198,7 @@ class Job(Base, TimestampMixin):           # table "jobs"
 
 ```python
 class ApplicationStatus(str, Enum):
-    PENDING = "pending"; REVIEWED = "reviewed"; INTERVIEW = "interview"
+    PENDING = "pending"; INTERVIEW = "interview"
     REJECTED = "rejected"; HIRED = "hired"
 
 class Application(Base, TimestampMixin):    # table "applications"
@@ -667,7 +667,7 @@ interface CreateJobPayload { title, description, location?, work_type?, salary_m
 #### `application.ts`
 
 ```ts
-type ApplicationStatus = "pending" | "reviewed" | "interview" | "rejected" | "hired"
+type ApplicationStatus = "pending" | "interview" | "rejected" | "hired"
 interface StructuredResume  { name, work_experience_years, education_level?, contact, work_experience,
                               project_experience, education, certificates, skills, self_evaluation? }
 interface Applicant         { id, applicant_name, resume_text, cover_letter?, structured_resume?, status,

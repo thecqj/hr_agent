@@ -113,7 +113,7 @@ Job (jobs)                      ← 岗位表
 Application (applications)      ← 投递/申请表
 ├── job_id → Job (FK)
 ├── applicant_id → User (FK)
-├── status: ApplicationStatus (pending | reviewed | interview | rejected | hired)
+├── status: ApplicationStatus (pending | interview | rejected | hired)
 ├── structured_resume: JSONB    ← 结构化简历（由 AI 解析填入）
 └── resume_text: Text           ← 简历原文
 ```

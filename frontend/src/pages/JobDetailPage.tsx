@@ -37,9 +37,11 @@ export default function JobDetailPage() {
     { page: 1, page_size: 100 },
     { enabled: isJobSeeker }
   );
-  const hasApplied = isJobSeeker
-    ? (applicationsData?.items ?? []).some((app) => app.job_id === id)
-    : false;
+  const myApplication = isJobSeeker
+    ? (applicationsData?.items ?? []).find((app) => app.job_id === id)
+    : undefined;
+  const hasApplied = myApplication != null;
+  const isRejected = myApplication?.status === "rejected";
   const { setItems: setBreadcrumbItems } = useBreadcrumb();
 
   useEffect(() => {
@@ -180,7 +182,11 @@ export default function JobDetailPage() {
           {/* Actions */}
           <div className="flex flex-wrap items-center gap-3">
             {!isRecruiter && (
-              hasApplied ? (
+              isRejected ? (
+                <Button size="lg" variant="destructive" disabled>
+                  已拒绝
+                </Button>
+              ) : hasApplied ? (
                 <Button size="lg" variant="secondary" disabled>
                   已投递
                 </Button>

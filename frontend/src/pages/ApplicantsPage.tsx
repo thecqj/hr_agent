@@ -41,12 +41,13 @@ import ErrorState from "@/shared/ui/feedback/ErrorState";
 import { StatusBadge } from "@/shared/ui/StatusBadge";
 import { useBreadcrumb } from "@/shared/ui/layout/breadcrumb-context";
 
-// Status filter tabs (全部 / 待审核 / 已通过 / 已拒绝)
+// Status filter tabs (全部 / 待审核 / 面试中 / 已拒绝 / 已录用)
 const STATUS_CATEGORIES = [
   { key: "all", label: "全部" },
   { key: "pending", label: "待审核" },
-  { key: "reviewed", label: "已审阅" },
+  { key: "interview", label: "面试中" },
   { key: "rejected", label: "已拒绝" },
+  { key: "hired", label: "已录用" },
 ];
 
 function formatDate(dateStr?: string) {
@@ -364,7 +365,7 @@ export default function ApplicantsPage() {
                         <>
                           <Button
                             size="sm"
-                            onClick={() => updateStatus(app.id, "reviewed")}
+                            onClick={() => updateStatus(app.id, "interview")}
                             disabled={updateStatusMutation.isPending}
                           >
                             <CheckCircle className="h-4 w-4 mr-1" />

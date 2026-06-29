@@ -228,6 +228,8 @@ export default function ApplyPage() {
     } catch (error: unknown) {
       if (axios.isAxiosError(error) && error.response?.status === 409) {
         setShowConfirm(true);
+      } else if (axios.isAxiosError(error) && error.response?.status === 403) {
+        toast.error(error.response.data?.detail || "该岗位已拒绝您的投递，无法再次申请");
       } else {
         toast.error(getApiErrorMessage(error, "投递失败"));
       }
