@@ -17,12 +17,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Migrate existing reviewed records to interview
-    op.execute("UPDATE applications SET status = 'interview' WHERE status = 'reviewed'")
-    # NOTE: The PostgreSQL native enum type 'applicationstatus' still contains 'REVIEWED'
-    # as a valid value. This is harmless — the application code no longer produces 'reviewed'
-    # status values. Removing a value from a PG enum requires DROP/RECREATE which is risky
-    # on production databases with dependent columns. Leaving the dead value is the safe choice.
+    # Migrate existing REVIEWED records to INTERVIEW.
+    # PG native enum values are uppercase (PENDING, REVIEWED, INTERVIEW, ...).
+    op.execute("UPDATE applications SET status = 'INTERVIEW' WHERE status = 'REVIEWED'")
 
 
 def downgrade() -> None:
