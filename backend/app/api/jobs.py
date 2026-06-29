@@ -36,6 +36,8 @@ def _job_to_dict(job: Any, recruiter_name: Optional[str] = None) -> Dict[str, An
         "recruiter_name": recruiter_name,
         "applications_count": len(job.applications),
         "interview_quota": job.interview_quota,
+        "head_count": job.head_count,
+        "job_code": job.job_code,
     }
 
 

@@ -85,19 +85,39 @@ async def dispatch_node(state: ConversationState) -> dict[str, Any]:
         return {}
 
     # ── 岗位匹配 ──────────────────────────────────────────
-    job_id_param = extracted_params.get("job_id")
-    job_title_param = extracted_params.get("job_title")
+    job_code_param: str | None = extracted_params.get("job_code")
+    job_id_param: str | None = extracted_params.get("job_id")
+    job_title_param: str | None = extracted_params.get("job_title")
 
     matched_job: Job | None = None
 
-    if job_id_param:
-        # 直接用 job_id
+    # Priority 1: job_code (exact match)
+    if job_code_param:
+        result = await db.execute(
+            select(Job).where(Job.job_code == job_code_param)
+        )
+        matched_job = result.scalar_one_or_none()
+        if matched_job and str(matched_job.recruiter_id) != current_user_id:
+            return {
+                "reply_message": f"你没有岗位 {job_code_param} 的权限。",
+                "errors": [],
+            }
+        if not matched_job:
+            return {
+                "reply_message": f"未找到编号为 {job_code_param} 的岗位。",
+                "errors": [],
+            }
+
+    # Priority 2: job_id (UUID exact match)
+    if not matched_job and job_id_param:
         matched_job = await db.get(Job, job_id_param)
         if matched_job and matched_job.recruiter_id != uuid.UUID(current_user_id):
             return {
                 "reply_message": "❌ 您不是该岗位的招聘者，无法评估。",
             }
-    elif job_title_param:
+
+    # Priority 3: job_title (fuzzy match)
+    if not matched_job and job_title_param:
         # 模糊匹配岗位标题
         await adispatch_custom_event("progress", {"status": "正在匹配岗位..."})
         escaped_title = str(job_title_param).lower().replace("%", "\\%").replace("_", "\\_")
@@ -106,9 +126,9 @@ async def dispatch_node(state: ConversationState) -> dict[str, Any]:
             Job.status == JobStatus.ACTIVE,
             func.lower(Job.title).ilike(f"%{escaped_title}%", escape="\\"),
         )
-        jobs = list((await db.execute(stmt)).scalars().all())
+        matching_jobs = list((await db.execute(stmt)).scalars().all())
 
-        if len(jobs) == 0:
+        if len(matching_jobs) == 0:
             # 没找到，列出所有活跃岗位
             all_jobs_stmt = select(Job).where(
                 Job.recruiter_id == uuid.UUID(current_user_id),
@@ -116,7 +136,7 @@ async def dispatch_node(state: ConversationState) -> dict[str, Any]:
             )
             all_jobs = list((await db.execute(all_jobs_stmt)).scalars().all())
             if all_jobs:
-                job_list = "\n".join(f"  {i+1}. {j.title}" for i, j in enumerate(all_jobs))
+                job_list = "\n".join(f"  {i+1}. {j.title} ({j.job_code})" for i, j in enumerate(all_jobs))
                 return {
                     "reply_message": f"❌ 未找到匹配「{job_title_param}」的岗位。您当前有以下活跃岗位：\n{job_list}",
                 }
@@ -124,23 +144,53 @@ async def dispatch_node(state: ConversationState) -> dict[str, Any]:
                 return {
                     "reply_message": "❌ 您当前没有活跃的岗位，请先发布岗位。",
                 }
-        elif len(jobs) > 1:
-            job_list = "\n".join(f"  {i+1}. {j.title} (ID: {j.id})" for i, j in enumerate(jobs))
+        elif len(matching_jobs) > 1:
+            job_list = "\n".join(
+                f"  {i+1}. {j.title} ({j.job_code})"
+                for i, j in enumerate(matching_jobs)
+            )
             return {
-                "reply_message": f"找到多个匹配「{job_title_param}」的岗位，请指定：\n{job_list}",
+                "reply_message": f"找到多个匹配「{job_title_param}」的岗位，请指定岗位编号：\n{job_list}",
             }
         else:
-            matched_job = jobs[0]
-    else:
-        # 没有提供岗位信息
+            matched_job = matching_jobs[0]
+
+    # No job params provided at all
+    if not matched_job and not job_code_param and not job_id_param and not job_title_param:
+        active_jobs = await db.execute(
+            select(Job).where(
+                Job.recruiter_id == uuid.UUID(current_user_id),
+                Job.status == JobStatus.ACTIVE,
+            ).order_by(Job.created_at.desc())
+        )
+        jobs_list = active_jobs.scalars().all()
+        if not jobs_list:
+            return {
+                "reply_message": "你当前没有活跃的岗位。",
+                "errors": [],
+            }
+        job_list = "\n".join(
+            f"  {j.job_code} - {j.title}"
+            for j in jobs_list
+        )
         return {
-            "reply_message": "请指定要评估的岗位，例如「帮我筛选前端开发岗位的简历」。",
+            "reply_message": f"请指定要筛选的岗位：\n{job_list}",
+            "errors": [],
         }
 
     if not matched_job:
         return {
             "reply_message": "❌ 未找到匹配的岗位。",
         }
+
+    # ── interview_quota 写回 ──────────────────────────────────
+    user_quota_raw = extracted_params.get("interview_quota")
+    if user_quota_raw is not None:
+        user_quota = int(user_quota_raw)
+        if matched_job.interview_quota != user_quota:
+            matched_job.interview_quota = user_quota
+            await db.commit()
+            await db.refresh(matched_job)
 
     # ── 并发检查 ──────────────────────────────────────────
     existing_stmt = select(EvaluationTask).where(

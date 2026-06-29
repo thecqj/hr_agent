@@ -1,3 +1,5 @@
+import random
+
 from typing import Optional, Tuple, Sequence, Dict, Any
 
 from fastapi import HTTPException, status
@@ -11,6 +13,18 @@ from app.models.user import User, UserRole
 from app.schemas.job import JobCreateRequest, JobStatusUpdateRequest, JobUpdateRequest
 
 
+async def _generate_job_code(db: AsyncSession) -> str:
+    """Generate a random unique job_code (J10000–J99999)."""
+    while True:
+        num = random.randint(10000, 99999)
+        code = f"J{num:05d}"
+        result = await db.execute(
+            select(Job).where(Job.job_code == code)
+        )
+        if result.scalar_one_or_none() is None:
+            return code
+
+
 async def create_job(db: AsyncSession, data: JobCreateRequest, current_user: User) -> Job:
     """创建岗位（仅招聘者）"""
     if current_user.role != UserRole.RECRUITER:
@@ -18,6 +32,8 @@ async def create_job(db: AsyncSession, data: JobCreateRequest, current_user: Use
             status_code=status.HTTP_403_FORBIDDEN,
             detail="仅招聘者可以发布岗位",
         )
+
+    job_code = await _generate_job_code(db)
 
     job = Job(
         recruiter_id=current_user.id,
@@ -30,6 +46,8 @@ async def create_job(db: AsyncSession, data: JobCreateRequest, current_user: Use
         work_type=data.work_type,
         skills_required=data.skills_required,
         interview_quota=data.interview_quota,
+        head_count=data.head_count,
+        job_code=job_code,
         status=JobStatus.ACTIVE,
     )
     db.add(job)

@@ -12,6 +12,7 @@ async def test_create_job_as_recruiter(
         json={
             "title": "Python 开发工程师",
             "description": "负责后端开发",
+            "requirements": "3年以上Python开发经验",
             "salary_min": 15,
             "salary_max": 30,
             "location": "北京",
@@ -25,6 +26,10 @@ async def test_create_job_as_recruiter(
     assert data["title"] == "Python 开发工程师"
     assert data["status"] == "active"
     assert data["skills_required"] == ["Python", "FastAPI"]
+    assert data["job_code"].startswith("J")
+    assert len(data["job_code"]) == 6
+    assert data["interview_quota"] == 1  # default
+    assert data["head_count"] == 1       # default
 
 
 @pytest.mark.asyncio
@@ -37,6 +42,7 @@ async def test_create_job_as_seeker_forbidden(
         json={
             "title": "不应该创建",
             "description": "测试",
+            "requirements": "测试",
             "work_type": "onsite",
         },
         headers=auth_headers_seeker,
@@ -52,13 +58,13 @@ async def test_list_jobs_default_filter(
     # 创建一个 active 职位
     await client.post(
         "/api/jobs/",
-        json={"title": "Active Job", "description": "desc", "work_type": "onsite"},
+        json={"title": "Active Job", "description": "desc", "requirements": "无", "work_type": "onsite"},
         headers=auth_headers_recruiter,
     )
     # 创建后关闭一个
     create_resp = await client.post(
         "/api/jobs/",
-        json={"title": "To Close", "description": "desc", "work_type": "onsite"},
+        json={"title": "To Close", "description": "desc", "requirements": "无", "work_type": "onsite"},
         headers=auth_headers_recruiter,
     )
     job_id = create_resp.json()["id"]
@@ -84,12 +90,12 @@ async def test_list_jobs_keyword_search(
     """列出职位 — 关键词搜索"""
     await client.post(
         "/api/jobs/",
-        json={"title": "Go 开发", "description": "云原生开发", "work_type": "remote"},
+        json={"title": "Go 开发", "description": "云原生开发", "requirements": "Go语言经验", "work_type": "remote"},
         headers=auth_headers_recruiter,
     )
     await client.post(
         "/api/jobs/",
-        json={"title": "Java 开发", "description": "企业级应用", "work_type": "onsite"},
+        json={"title": "Java 开发", "description": "企业级应用", "requirements": "Java经验", "work_type": "onsite"},
         headers=auth_headers_recruiter,
     )
 
@@ -113,6 +119,7 @@ async def test_list_jobs_salary_filter(
         json={
             "title": "高薪岗位",
             "description": "desc",
+            "requirements": "无",
             "salary_min": 30,
             "salary_max": 50,
             "work_type": "onsite",
@@ -141,7 +148,7 @@ async def test_get_job_detail(
     """获取单个职位"""
     create_resp = await client.post(
         "/api/jobs/",
-        json={"title": "详情测试", "description": "详情desc", "work_type": "hybrid"},
+        json={"title": "详情测试", "description": "详情desc", "requirements": "无", "work_type": "hybrid"},
         headers=auth_headers_recruiter,
     )
     job_id = create_resp.json()["id"]
@@ -166,7 +173,7 @@ async def test_update_own_job(
     """招聘者更新自己的职位"""
     create_resp = await client.post(
         "/api/jobs/",
-        json={"title": "更新前", "description": "desc", "work_type": "onsite"},
+        json={"title": "更新前", "description": "desc", "requirements": "无", "work_type": "onsite"},
         headers=auth_headers_recruiter,
     )
     job_id = create_resp.json()["id"]
@@ -188,7 +195,7 @@ async def test_update_other_job_forbidden(
     # 先用 recruiter 创建一个职位
     create_resp = await client.post(
         "/api/jobs/",
-        json={"title": "别人的", "description": "desc", "work_type": "onsite"},
+        json={"title": "别人的", "description": "desc", "requirements": "无", "work_type": "onsite"},
         headers=auth_headers_recruiter,
     )
     job_id = create_resp.json()["id"]
@@ -221,7 +228,7 @@ async def test_delete_own_job(
     """删除自己的职位"""
     create_resp = await client.post(
         "/api/jobs/",
-        json={"title": "待删除", "description": "desc", "work_type": "onsite"},
+        json={"title": "待删除", "description": "desc", "requirements": "无", "work_type": "onsite"},
         headers=auth_headers_recruiter,
     )
     job_id = create_resp.json()["id"]
@@ -241,7 +248,7 @@ async def test_delete_other_job_forbidden(
     """删除他人职位失败"""
     create_resp = await client.post(
         "/api/jobs/",
-        json={"title": "不可删", "description": "desc", "work_type": "onsite"},
+        json={"title": "不可删", "description": "desc", "requirements": "无", "work_type": "onsite"},
         headers=auth_headers_recruiter,
     )
     job_id = create_resp.json()["id"]
@@ -269,7 +276,7 @@ async def test_update_job_status(
     """更新职位状态"""
     create_resp = await client.post(
         "/api/jobs/",
-        json={"title": "状态测试", "description": "desc", "work_type": "onsite"},
+        json={"title": "状态测试", "description": "desc", "requirements": "无", "work_type": "onsite"},
         headers=auth_headers_recruiter,
     )
     job_id = create_resp.json()["id"]
@@ -291,7 +298,7 @@ async def test_applications_count_reflects_real_count(
     # 1. 招聘者创建岗位
     create_resp = await client.post(
         "/api/jobs/",
-        json={"title": "计数测试", "description": "desc", "work_type": "onsite"},
+        json={"title": "计数测试", "description": "desc", "requirements": "无", "work_type": "onsite"},
         headers=auth_headers_recruiter,
     )
     assert create_resp.status_code == 201
@@ -335,3 +342,59 @@ async def test_applications_count_reflects_real_count(
     detail_resp = await client.get(f"/api/jobs/{job_id}")
     assert detail_resp.status_code == 200
     assert detail_resp.json()["applications_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_job_code_is_unique_and_auto_generated(
+    client: AsyncClient, auth_headers_recruiter: dict[str, str]
+) -> None:
+    """Two jobs should get different job_codes"""
+    resp1 = await client.post(
+        "/api/jobs/",
+        json={
+            "title": "岗位A",
+            "description": "描述A，至少十个字",
+            "requirements": "无",
+            "skills_required": [],
+        },
+        headers=auth_headers_recruiter,
+    )
+    resp2 = await client.post(
+        "/api/jobs/",
+        json={
+            "title": "岗位B",
+            "description": "描述B，至少十个字",
+            "requirements": "无",
+            "skills_required": [],
+        },
+        headers=auth_headers_recruiter,
+    )
+    assert resp1.status_code == 201
+    assert resp2.status_code == 201
+    code1 = resp1.json()["job_code"]
+    code2 = resp2.json()["job_code"]
+    assert code1 != code2
+    assert code1.startswith("J") and len(code1) == 6
+    assert code2.startswith("J") and len(code2) == 6
+
+
+@pytest.mark.asyncio
+async def test_create_job_with_custom_quota_and_headcount(
+    client: AsyncClient, auth_headers_recruiter: dict[str, str]
+) -> None:
+    """Creating a job with explicit interview_quota and head_count"""
+    resp = await client.post(
+        "/api/jobs/",
+        json={
+            "title": "岗位C",
+            "description": "描述C，至少十个字",
+            "requirements": "无",
+            "interview_quota": 5,
+            "head_count": 3,
+        },
+        headers=auth_headers_recruiter,
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["interview_quota"] == 5
+    assert data["head_count"] == 3

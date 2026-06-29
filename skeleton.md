@@ -189,7 +189,9 @@ class Job(Base, TimestampMixin):           # table "jobs"
     work_type:         Mapped[WorkType]    # default=ONSITE
     skills_required:   Mapped[list[str]]   # JSON
     status:            Mapped[JobStatus]   # default=ACTIVE
-    interview_quota:   Mapped[int | None]  # 面试人数上限
+    job_code:          Mapped[str]         # String(6), unique, indexed; 格式 J10000~J99999
+    head_count:        Mapped[int]         # 最终招聘人数, default=1
+    interview_quota:   Mapped[int]         # 面试人数上限, default=1
     # 关系
     recruiter:    Mapped[User]              # back_populates="jobs"
     applications: Mapped[list[Application]]  # cascade delete-orphan
@@ -284,10 +286,10 @@ class EvaluationTask(Base, TimestampMixin):          # table "evaluation_tasks"
 
 | 类名 | 关键字段 |
 |------|---------|
-| `JobCreateRequest` | `title`, `description`, `requirements`, `salary_min/max`, `location`, `work_type`, `skills_required`, `interview_quota?` |
-| `JobUpdateRequest` | 所有字段 Optional（部分更新，含 `requirements`, `interview_quota`） |
+| `JobCreateRequest` | `title`, `description`, `requirements`, `salary_min/max`, `location`, `work_type`, `skills_required`, `head_count?`, `interview_quota` (required, default=1) |
+| `JobUpdateRequest` | 所有字段 Optional（部分更新，含 `requirements`, `interview_quota`, `head_count`） |
 | `JobStatusUpdateRequest` | `status: JobStatus` |
-| `JobResponse` | 全部字段 + `recruiter_name`, `applications_count`, `interview_quota`, `requirements`; `from_attributes=True` |
+| `JobResponse` | 全部字段 + `job_code`, `head_count`, `recruiter_name`, `applications_count`, `interview_quota`, `requirements`; `from_attributes=True` |
 | `JobListResponse` | `total`, `page`, `page_size`, `items: list[JobResponse]` |
 
 #### `application.py` — 投递 DTO
@@ -662,6 +664,7 @@ type JobStatus = "draft" | "active" | "closed"
 interface Job              { id, recruiter_id, title, description, requirements,
                              salary_min?, salary_max?,
                              location?, work_type, skills_required, status, created_at, updated_at,
+                             job_code, head_count, interview_quota,
                              recruiter_name?, applications_count? }
 interface PaginatedResponse<T> { total, page, page_size, items: T[] }
 interface JobListParams    { keyword?, work_type?, status?, page?, page_size? }

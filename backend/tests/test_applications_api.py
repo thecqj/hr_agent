@@ -9,6 +9,7 @@ async def _create_job(client: AsyncClient, recruiter_headers: dict[str, str]) ->
         json={
             "title": "测试岗位",
             "description": "测试描述",
+            "requirements": "3年以上开发经验",
             "work_type": "onsite",
         },
         headers=recruiter_headers,
@@ -50,7 +51,7 @@ async def test_apply_as_recruiter_forbidden(
     # 先创建一个岗位（需要用 recruiter 自己来创建）
     create_resp = await client.post(
         "/api/jobs/",
-        json={"title": "For apply test", "description": "desc", "work_type": "onsite"},
+        json={"title": "For apply test", "description": "desc", "requirements": "开发经验", "work_type": "onsite"},
         headers=auth_headers_recruiter,
     )
     job_id = create_resp.json()["id"]
