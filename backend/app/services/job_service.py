@@ -23,6 +23,7 @@ async def create_job(db: AsyncSession, data: JobCreateRequest, current_user: Use
         recruiter_id=current_user.id,
         title=data.title,
         description=data.description,
+        requirements=data.requirements,
         salary_min=data.salary_min,
         salary_max=data.salary_max,
         location=data.location,

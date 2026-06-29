@@ -34,6 +34,7 @@ class Job(Base, TimestampMixin):
     )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
+    requirements: Mapped[str] = mapped_column(Text, nullable=False, default="")
     requirement_vector: Mapped[Optional[Any]] = mapped_column(Vector(1536), nullable=True)
     salary_min: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     salary_max: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

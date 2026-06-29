@@ -115,6 +115,13 @@ function JobDetailContent({ jobId }: { jobId: string }) {
         </div>
       )}
 
+      {job.requirements && (
+        <div>
+          <h4 className="text-sm font-medium mb-1">任职要求</h4>
+          <p className="text-sm text-muted-foreground whitespace-pre-line">{job.requirements}</p>
+        </div>
+      )}
+
       <div className="text-xs text-muted-foreground space-y-0.5">
         <p>发布时间：{new Date(job.created_at).toLocaleString()}</p>
         <p>更新时间：{new Date(job.updated_at).toLocaleString()}</p>

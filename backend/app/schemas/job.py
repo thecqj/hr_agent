@@ -12,6 +12,7 @@ class JobCreateRequest(BaseModel):
 
     title: str = Field(..., min_length=1, max_length=200, description="岗位标题")
     description: str = Field(..., min_length=1, description="岗位描述（JD）")
+    requirements: str = Field(..., min_length=1, description="任职要求")
     salary_min: Optional[int] = Field(None, description="最低薪资（K）")
     salary_max: Optional[int] = Field(None, description="最高薪资（K）")
     location: Optional[str] = Field(None, description="工作地点")
@@ -25,6 +26,7 @@ class JobUpdateRequest(BaseModel):
 
     title: Optional[str] = Field(None, min_length=1, max_length=200, description="岗位标题")
     description: Optional[str] = Field(None, min_length=1, description="岗位描述")
+    requirements: Optional[str] = Field(None, min_length=1, description="任职要求")
     salary_min: Optional[int] = Field(None, description="最低薪资")
     salary_max: Optional[int] = Field(None, description="最高薪资")
     location: Optional[str] = Field(None, description="工作地点")
@@ -44,6 +46,7 @@ class JobResponse(BaseModel):
     recruiter_id: str
     title: str
     description: str
+    requirements: str
     salary_min: Optional[int] = None
     salary_max: Optional[int] = None
     location: Optional[str] = None

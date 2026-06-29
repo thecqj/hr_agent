@@ -6,6 +6,7 @@ export interface Job {
   recruiter_id: string;
   title: string;
   description: string;
+  requirements: string;
   salary_min: number | null;
   salary_max: number | null;
   location: string | null;
@@ -38,6 +39,7 @@ export interface JobListParams {
 export interface CreateJobPayload {
   title: string;
   description: string;
+  requirements: string;
   location?: string;
   work_type?: WorkType;
   salary_min?: number;

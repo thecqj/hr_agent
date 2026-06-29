@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useFieldArray, useForm } from "react-hook-form";
+import { useFieldArray, useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useNavigate, useParams } from "react-router-dom";
@@ -78,7 +78,7 @@ const structuredResumeSchema = z.object({
   contact: contactSchema,
   work_experience: z.array(workExpSchema),
   project_experience: z.array(projectSchema),
-  education: z.array(educationSchema),
+  education: z.array(educationSchema).min(1, "请至少添加一条教育经历"),
   certificates: z.array(certificateSchema),
   skills: z.array(z.string()),
   self_evaluation: z.string().optional(),
@@ -440,13 +440,21 @@ export default function ApplyPage() {
                     </div>
                     <div className="space-y-2">
                       <Label>技术栈（逗号分隔）</Label>
-                      <Input
-                        placeholder="React, TypeScript, Node.js"
-                        defaultValue={form.getValues(`project_experience.${index}.technologies`)?.join(", ") || ""}
-                        onChange={(e) => {
-                          const val = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
-                          form.setValue(`project_experience.${index}.technologies`, val);
-                        }}
+                      <Controller
+                        control={form.control}
+                        name={`project_experience.${index}.technologies`}
+                        render={({ field }) => (
+                          <Input
+                            placeholder="React, TypeScript, Node.js"
+                            value={field.value?.join(", ") ?? ""}
+                            onBlur={field.onBlur}
+                            onChange={(e) => {
+                              field.onChange(
+                                e.target.value.split(",").map((s) => s.trim()).filter(Boolean)
+                              );
+                            }}
+                          />
+                        )}
                       />
                     </div>
                   </CardContent>
@@ -461,12 +469,12 @@ export default function ApplyPage() {
               {/* Education */}
               <div>
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold">教育经历</h2>
+                  <h2 className="text-lg font-semibold">教育经历 <span className="text-destructive text-sm">*</span></h2>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => addEdu({ school: "", major: "", degree: "", start_date: "" })}
+                    onClick={() => addEdu({ school: "", major: "", degree: "", start_date: "", end_date: "" })}
                   >
                     <Plus className="h-4 w-4 mr-1" /> 添加
                   </Button>
@@ -507,6 +515,9 @@ export default function ApplyPage() {
                     </CardContent>
                   </Card>
                 ))}
+                {form.formState.errors.education && (
+                  <p className="text-sm text-destructive mt-2">{form.formState.errors.education.message}</p>
+                )}
               </div>
 
               <Separator />
@@ -546,13 +557,21 @@ export default function ApplyPage() {
               {/* Skills */}
               <div className="space-y-2">
                 <Label>专业技能（逗号分隔）</Label>
-                <Input
-                  placeholder="JavaScript, Python, 项目管理"
-                  defaultValue={form.getValues("skills")?.join(", ") || ""}
-                  onChange={(e) => {
-                    const val = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
-                    form.setValue("skills", val);
-                  }}
+                <Controller
+                  control={form.control}
+                  name="skills"
+                  render={({ field }) => (
+                    <Input
+                      placeholder="JavaScript, Python, 项目管理"
+                      value={field.value?.join(", ") ?? ""}
+                      onBlur={field.onBlur}
+                      onChange={(e) => {
+                        field.onChange(
+                          e.target.value.split(",").map((s) => s.trim()).filter(Boolean)
+                        );
+                      }}
+                    />
+                  )}
                 />
               </div>
 

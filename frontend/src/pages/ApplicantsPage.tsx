@@ -108,8 +108,8 @@ export default function ApplicantsPage() {
 
     return (
       <Dialog open={!!selectedApplicant} onOpenChange={() => setSelectedApplicant(null)}>
-        <DialogContent className="!max-w-4xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="!max-w-4xl !max-h-[85vh] flex flex-col p-0">
+          <DialogHeader className="shrink-0 px-6 py-4 border-b">
             <DialogTitle className="flex items-center gap-3">
               {selectedApplicant.applicant_name} 的简历
               <StatusBadge status={selectedApplicant.status} />
@@ -119,7 +119,7 @@ export default function ApplicantsPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-6 text-sm">
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6 text-sm">
             {resume ? (
               <>
                 {/* 基本信息 */}
@@ -242,7 +242,7 @@ export default function ApplicantsPage() {
                     <h3 className="font-semibold mb-3 text-base border-b pb-2">专业技能</h3>
                     <div className="flex flex-wrap gap-2">
                       {resume.skills.map((skill, index) => (
-                        <Badge key={index} variant="default" className="bg-primary/20 text-primary-foreground hover:bg-primary/30 text-sm py-1 px-3">
+                        <Badge key={skill} variant="default" className="bg-primary/20 text-primary-foreground hover:bg-primary/30 text-sm py-1 px-3">
                           {skill}
                         </Badge>
                       ))}

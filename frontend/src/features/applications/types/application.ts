@@ -88,6 +88,7 @@ export interface MyApplication {
   company_name?: string;
   resume_text: string;
   cover_letter?: string;
+  structured_resume?: StructuredResume;
   status: ApplicationStatus;
   created_at: string;
 }

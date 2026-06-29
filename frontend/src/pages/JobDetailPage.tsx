@@ -16,6 +16,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthStore } from "@/features/auth/store/authStore";
+import { useMyApplicationsQuery } from "@/features/applications/hooks/useApplications";
 import { useJobDetailQuery, useUpdateJobStatusMutation } from "@/features/jobs/hooks/useJobs";
 import type { JobStatus } from "@/features/jobs/types/job";
 import { getApiErrorMessage } from "@/shared/api/error";
@@ -31,6 +32,14 @@ export default function JobDetailPage() {
 
   const { data: job, isLoading, isError, refetch } = useJobDetailQuery(id);
   const statusMutation = useUpdateJobStatusMutation();
+  const isJobSeeker = user?.role === "job_seeker";
+  const { data: applicationsData } = useMyApplicationsQuery(
+    { page: 1, page_size: 100 },
+    { enabled: isJobSeeker }
+  );
+  const hasApplied = isJobSeeker
+    ? (applicationsData?.items ?? []).some((app) => app.job_id === id)
+    : false;
   const { setItems: setBreadcrumbItems } = useBreadcrumb();
 
   useEffect(() => {
@@ -155,11 +164,15 @@ export default function JobDetailPage() {
 
           <div>
             <h2 className="text-xl font-semibold mb-3">任职要求</h2>
-            <p className="whitespace-pre-wrap text-sm leading-relaxed">
-              {job.skills_required.length > 0
-                ? `熟悉或掌握以下技能：${job.skills_required.join("、")}`
-                : "暂无具体要求"}
-            </p>
+            {job.requirements ? (
+              <p className="whitespace-pre-wrap text-sm leading-relaxed">{job.requirements}</p>
+            ) : job.skills_required.length > 0 ? (
+              <p className="whitespace-pre-wrap text-sm leading-relaxed">
+                熟悉或掌握以下技能：{job.skills_required.join("、")}
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">暂无具体要求</p>
+            )}
           </div>
 
           <Separator />
@@ -167,9 +180,15 @@ export default function JobDetailPage() {
           {/* Actions */}
           <div className="flex flex-wrap items-center gap-3">
             {!isRecruiter && (
-              <Button size="lg" onClick={handleApply}>
-                立即投递
-              </Button>
+              hasApplied ? (
+                <Button size="lg" variant="secondary" disabled>
+                  已投递
+                </Button>
+              ) : (
+                <Button size="lg" onClick={handleApply}>
+                  立即投递
+                </Button>
+              )
             )}
             {isRecruiter && (
               <div className="flex items-center gap-2">

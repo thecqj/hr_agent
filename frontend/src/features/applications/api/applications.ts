@@ -18,7 +18,9 @@ export async function getMyApplications(params: ApplicationListParams = {}): Pro
 }
 
 export async function getApplicationsByJob(jobId: string): Promise<PaginatedResponse<Applicant>> {
-  const res = await apiClient.get<PaginatedResponse<Applicant>>(`/applications/job/${jobId}`);
+  const res = await apiClient.get<PaginatedResponse<Applicant>>(`/applications/job/${jobId}`, {
+    params: { page_size: 100 },
+  });
   return res.data;
 }
 
