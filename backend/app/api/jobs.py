@@ -24,6 +24,7 @@ def _job_to_dict(job: Any, recruiter_name: Optional[str] = None) -> Dict[str, An
         "recruiter_id": str(job.recruiter_id),
         "title": job.title,
         "description": job.description,
+        "requirements": job.requirements,
         "salary_min": job.salary_min,
         "salary_max": job.salary_max,
         "location": job.location,

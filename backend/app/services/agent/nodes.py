@@ -87,6 +87,7 @@ async def collect_node(state: EvaluationState) -> dict[str, Any]:
         "title": job.title,
         "description": job.description,
         "skills_required": job.skills_required,
+        "requirements": job.requirements,
         "salary_min": job.salary_min,
         "salary_max": job.salary_max,
         "location": job.location,

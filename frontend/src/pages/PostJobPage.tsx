@@ -32,6 +32,7 @@ const WORK_TYPE_OPTIONS: { value: WorkType; label: string }[] = [
 const jobSchema = z.object({
   title: z.string().min(1, "岗位名称不能为空"),
   description: z.string().min(10, "岗位描述至少10字"),
+  requirements: z.string().min(1, "任职要求不能为空"),
   location: z.string().optional(),
   work_type: z.enum(["remote", "onsite", "hybrid"]).optional(),
   salary_min: z.number({ message: "请输入数字" }).optional(),
@@ -63,6 +64,7 @@ export default function PostJobPage() {
     resolver: zodResolver(jobSchema),
     defaultValues: {
       work_type: "onsite",
+      requirements: "",
     },
   });
 
@@ -218,16 +220,18 @@ export default function PostJobPage() {
             </div>
             <div>
               <Label htmlFor="requirements">
-                任职要求 <span className="text-muted-foreground text-xs">(选填)</span>
+                任职要求 <span className="text-destructive">*</span>
               </Label>
               <Textarea
                 id="requirements"
+                {...register("requirements")}
                 rows={4}
                 className="mt-1.5"
                 placeholder="请描述该岗位的任职要求..."
-                // Note: no register — this field is not in the current API.
-                // It is included per spec for future use but not submitted.
               />
+              {formState.errors.requirements && (
+                <p className="text-sm text-destructive mt-1">{formState.errors.requirements.message}</p>
+              )}
             </div>
           </CardContent>
         </Card>

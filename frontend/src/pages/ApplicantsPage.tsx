@@ -41,12 +41,13 @@ import ErrorState from "@/shared/ui/feedback/ErrorState";
 import { StatusBadge } from "@/shared/ui/StatusBadge";
 import { useBreadcrumb } from "@/shared/ui/layout/breadcrumb-context";
 
-// Status filter tabs (全部 / 待审核 / 已通过 / 已拒绝)
+// Status filter tabs (全部 / 待审核 / 面试中 / 已拒绝 / 已录用)
 const STATUS_CATEGORIES = [
   { key: "all", label: "全部" },
   { key: "pending", label: "待审核" },
-  { key: "reviewed", label: "已审阅" },
+  { key: "interview", label: "面试中" },
   { key: "rejected", label: "已拒绝" },
+  { key: "hired", label: "已录用" },
 ];
 
 function formatDate(dateStr?: string) {
@@ -108,8 +109,8 @@ export default function ApplicantsPage() {
 
     return (
       <Dialog open={!!selectedApplicant} onOpenChange={() => setSelectedApplicant(null)}>
-        <DialogContent className="!max-w-4xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="!max-w-4xl !max-h-[85vh] flex flex-col p-0">
+          <DialogHeader className="shrink-0 px-6 py-4 border-b">
             <DialogTitle className="flex items-center gap-3">
               {selectedApplicant.applicant_name} 的简历
               <StatusBadge status={selectedApplicant.status} />
@@ -119,7 +120,7 @@ export default function ApplicantsPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-6 text-sm">
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6 text-sm">
             {resume ? (
               <>
                 {/* 基本信息 */}
@@ -242,7 +243,7 @@ export default function ApplicantsPage() {
                     <h3 className="font-semibold mb-3 text-base border-b pb-2">专业技能</h3>
                     <div className="flex flex-wrap gap-2">
                       {resume.skills.map((skill, index) => (
-                        <Badge key={index} variant="default" className="bg-primary/20 text-primary-foreground hover:bg-primary/30 text-sm py-1 px-3">
+                        <Badge key={skill} variant="default" className="bg-primary/20 text-primary-foreground hover:bg-primary/30 text-sm py-1 px-3">
                           {skill}
                         </Badge>
                       ))}
@@ -364,7 +365,7 @@ export default function ApplicantsPage() {
                         <>
                           <Button
                             size="sm"
-                            onClick={() => updateStatus(app.id, "reviewed")}
+                            onClick={() => updateStatus(app.id, "interview")}
                             disabled={updateStatusMutation.isPending}
                           >
                             <CheckCircle className="h-4 w-4 mr-1" />

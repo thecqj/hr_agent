@@ -11,10 +11,9 @@ from app.models.base import Base, TimestampMixin
 
 
 class ApplicationStatus(str, enum.Enum):
-    PENDING = "pending"        # 待查看
-    REVIEWED = "reviewed"      # 已查看
+    PENDING = "pending"        # 待审核
     INTERVIEW = "interview"    # 面试中
-    REJECTED = "rejected"      # 不合适
+    REJECTED = "rejected"      # 已拒绝
     HIRED = "hired"            # 已录用
 
 

@@ -196,8 +196,80 @@ async def test_update_application_status(
 
     resp = await client.patch(
         f"/api/applications/{application_id}/status",
-        json={"status": "reviewed"},
+        json={"status": "interview"},
         headers=auth_headers_recruiter,
     )
     assert resp.status_code == 200
-    assert resp.json()["status"] == "reviewed"
+    assert resp.json()["status"] == "interview"
+
+
+@pytest.mark.asyncio
+async def test_apply_rejected_job_blocked(
+    client: AsyncClient,
+    auth_headers_seeker: dict[str, str],
+    auth_headers_recruiter: dict[str, str],
+) -> None:
+    """被拒绝后无法再次申请（force=false）"""
+    job_id = await _create_job(client, auth_headers_recruiter)
+
+    # 求职者投递
+    apply_resp = await client.post(
+        "/api/applications/",
+        json={"job_id": job_id, "resume_text": "我的简历"},
+        headers=auth_headers_seeker,
+    )
+    assert apply_resp.status_code == 201
+    application_id = apply_resp.json()["id"]
+
+    # 招聘者拒绝
+    reject_resp = await client.patch(
+        f"/api/applications/{application_id}/status",
+        json={"status": "rejected"},
+        headers=auth_headers_recruiter,
+    )
+    assert reject_resp.status_code == 200
+
+    # 再次申请同一职位（force=false，默认）
+    resp = await client.post(
+        "/api/applications/",
+        json={"job_id": job_id, "resume_text": "再次申请"},
+        headers=auth_headers_seeker,
+    )
+    assert resp.status_code == 403
+    assert "该岗位已拒绝您的投递，无法再次申请" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_apply_rejected_job_force_blocked(
+    client: AsyncClient,
+    auth_headers_seeker: dict[str, str],
+    auth_headers_recruiter: dict[str, str],
+) -> None:
+    """被拒绝后即使 force=true 也无法再次申请"""
+    job_id = await _create_job(client, auth_headers_recruiter)
+
+    # 求职者投递
+    apply_resp = await client.post(
+        "/api/applications/",
+        json={"job_id": job_id, "resume_text": "我的简历"},
+        headers=auth_headers_seeker,
+    )
+    assert apply_resp.status_code == 201
+    application_id = apply_resp.json()["id"]
+
+    # 招聘者拒绝
+    reject_resp = await client.patch(
+        f"/api/applications/{application_id}/status",
+        json={"status": "rejected"},
+        headers=auth_headers_recruiter,
+    )
+    assert reject_resp.status_code == 200
+
+    # 再次申请同一职位（force=true 仍然被拒）
+    resp = await client.post(
+        "/api/applications/?force=true",
+        json={"job_id": job_id, "resume_text": "强制再次申请"},
+        headers=auth_headers_seeker,
+    )
+    assert resp.status_code == 403
+    assert "该岗位已拒绝您的投递，无法再次申请" in resp.json()["detail"]

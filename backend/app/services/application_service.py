@@ -34,6 +34,11 @@ async def create_application(
     existing_app = (await db.execute(existing_stmt)).scalar_one_or_none()
 
     if existing_app:
+        if existing_app.status == ApplicationStatus.REJECTED:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="该岗位已拒绝您的投递，无法再次申请",
+            )
         if not force:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,

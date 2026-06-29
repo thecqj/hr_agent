@@ -81,9 +81,15 @@ def build_evaluation_user_prompt(
     job_json = json.dumps(job_info, ensure_ascii=False, indent=2)
     resume_json = json.dumps(structured_resume, ensure_ascii=False, indent=2)
 
+    # Extract requirements for emphasis (if available)
+    requirements_text = job_info.get("requirements", "")
+
     return f"""{system_text}
 
-## 岗位要求
+## 岗位任职要求（主要评估标准）
+{requirements_text if requirements_text else "见下方岗位完整信息"}
+
+## 岗位完整信息
 ```json
 {job_json}
 ```

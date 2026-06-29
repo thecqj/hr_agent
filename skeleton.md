@@ -23,7 +23,7 @@ hr_agent/
 │   ├── init_db.py
 │   ├── alembic/
 │   │   ├── env.py
-│   │   └── versions/             # 3 个迁移文件
+│   │   └── versions/             # 4 个迁移文件
 │   ├── app/
 │   │   ├── main.py
 │   │   ├── config.py
@@ -181,6 +181,7 @@ class Job(Base, TimestampMixin):           # table "jobs"
     recruiter_id:      Mapped[uuid.UUID]   # FK → users.id
     title:             Mapped[str]
     description:       Mapped[str]
+    requirements:      Mapped[str]         # 任职要求，default=""
     requirement_vector: Mapped[Any | None] # pgvector Vector(1536)
     salary_min:        Mapped[int | None]
     salary_max:        Mapped[int | None]
@@ -198,7 +199,7 @@ class Job(Base, TimestampMixin):           # table "jobs"
 
 ```python
 class ApplicationStatus(str, Enum):
-    PENDING = "pending"; REVIEWED = "reviewed"; INTERVIEW = "interview"
+    PENDING = "pending"; INTERVIEW = "interview"
     REJECTED = "rejected"; HIRED = "hired"
 
 class Application(Base, TimestampMixin):    # table "applications"
@@ -283,10 +284,10 @@ class EvaluationTask(Base, TimestampMixin):          # table "evaluation_tasks"
 
 | 类名 | 关键字段 |
 |------|---------|
-| `JobCreateRequest` | `title`, `description`, `salary_min/max`, `location`, `work_type`, `skills_required`, `interview_quota?` |
-| `JobUpdateRequest` | 所有字段 Optional（部分更新，含 `interview_quota`） |
+| `JobCreateRequest` | `title`, `description`, `requirements`, `salary_min/max`, `location`, `work_type`, `skills_required`, `interview_quota?` |
+| `JobUpdateRequest` | 所有字段 Optional（部分更新，含 `requirements`, `interview_quota`） |
 | `JobStatusUpdateRequest` | `status: JobStatus` |
-| `JobResponse` | 全部字段 + `recruiter_name`, `applications_count`, `interview_quota`; `from_attributes=True` |
+| `JobResponse` | 全部字段 + `recruiter_name`, `applications_count`, `interview_quota`, `requirements`; `from_attributes=True` |
 | `JobListResponse` | `total`, `page`, `page_size`, `items: list[JobResponse]` |
 
 #### `application.py` — 投递 DTO
@@ -486,6 +487,7 @@ prompts.py    — LLM 提示词模板
                 EVALUATION_SYSTEM_PROMPT: 简历评估系统提示（含维度、评分基准、偏见抑制）
                 REVIEW_SYSTEM_PROMPT: 边界复评系统提示
                 build_evaluation_user_prompt(job_info, structured_resume, dimensions) -> str
+                  ↑ 提取 job_info.requirements 作为独立「任职要求」区块置于岗位信息之前
                 build_review_user_prompt(job_info, borderline_recommend, borderline_reject, cutoff_score) -> str
 
 nodes.py      — LangGraph 节点实现
@@ -598,6 +600,7 @@ def decode_token(token: str) -> Dict[str, Any]
 | `f6fec5160021_init_database.py` | 初始建表：users, jobs, recruiter_profiles, seeker_profiles, applications |
 | `99186d2082a7_add_structured_resume_to_applications.py` | 为 applications 添加 structured_resume JSONB 列 |
 | `1ac3bbb5967e_add_hr_agent_evaluation_fields.py` | 新增 evaluation_tasks 表；为 applications 添加 ai_* 字段；为 jobs 添加 interview_quota |
+| `9d45e7aca4fb_add_requirements_to_jobs.py` | 为 jobs 添加 requirements Text 列（NOT NULL, default=""） |
 
 ---
 
@@ -656,23 +659,24 @@ interface RegisterData { email, password, name, role, phone? }
 ```ts
 type WorkType = "remote" | "onsite" | "hybrid"
 type JobStatus = "draft" | "active" | "closed"
-interface Job              { id, recruiter_id, title, description, salary_min?, salary_max?,
+interface Job              { id, recruiter_id, title, description, requirements,
+                             salary_min?, salary_max?,
                              location?, work_type, skills_required, status, created_at, updated_at,
                              recruiter_name?, applications_count? }
 interface PaginatedResponse<T> { total, page, page_size, items: T[] }
 interface JobListParams    { keyword?, work_type?, status?, page?, page_size? }
-interface CreateJobPayload { title, description, location?, work_type?, salary_min?, salary_max?, skills_required }
+interface CreateJobPayload { title, description, requirements, location?, work_type?, salary_min?, salary_max?, skills_required }
 ```
 
 #### `application.ts`
 
 ```ts
-type ApplicationStatus = "pending" | "reviewed" | "interview" | "rejected" | "hired"
+type ApplicationStatus = "pending" | "interview" | "rejected" | "hired"
 interface StructuredResume  { name, work_experience_years, education_level?, contact, work_experience,
                               project_experience, education, certificates, skills, self_evaluation? }
 interface Applicant         { id, applicant_name, resume_text, cover_letter?, structured_resume?, status,
                               ai_score?, ai_evaluation?, ai_decision?, ai_decision_reason?, ai_evaluated_at? }
-interface MyApplication     { id, job_id, job_title, company_name?, resume_text, cover_letter?, status, created_at }
+interface MyApplication     { id, job_id, job_title, company_name?, resume_text, cover_letter?, structured_resume?, status, created_at }
 interface CreateApplicationPayload { job_id?, resume_text, structured_resume, cover_letter? }
 interface DimensionScore    { name, score, weight, reason }                        // Phase 2
 interface EvaluationDetail  { application_id, applicant_name, ai_score, ai_evaluation, ai_decision, ai_decision_reason } // Phase 2
@@ -804,6 +808,8 @@ interface BreadcrumbItem { label: string; href?: string }
 | Hook | 说明 |
 |------|------|
 | `useChat()` | 管理 messages/isProcessing/sendMessage/disconnect/clearMessages；消费 SSE 事件流更新消息 |
+| `useBubbleDrag()` | ChatBubble 水平拖拽 + 吸附到最近边缘（localStorage 持久化） |
+| `useChatWindowDragResize(bubbleSide)` | ChatWindow 自由移动 + 可调整大小（localStorage 持久化） |
 
 #### 对话助手类型（`features/chat/types/chat.ts`）
 
