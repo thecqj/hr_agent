@@ -1,11 +1,23 @@
 """Chat API 测试"""
 
+import json
 from collections.abc import AsyncGenerator
 from typing import Any
 
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 from httpx import AsyncClient
+
+from app.schemas.chat import (
+    JobListCard,
+    JobDetailCard,
+    FunnelCard,
+    FunnelStage,
+    CandidateListCard,
+    CandidateItem,
+    ConfirmCard,
+    ResultEvent,
+)
 
 
 async def aiter(items: list[Any]) -> AsyncGenerator[Any, None]:
@@ -90,3 +102,46 @@ class TestChatSendEndpoint:
             )
             assert response.status_code == 200
             assert "text/event-stream" in response.headers.get("content-type", "")
+
+
+class TestCardSerialization:
+    """卡片序列化测试：验证所有卡片类型通过 SSE result 事件正确序列化"""
+
+    def test_job_list_card_serialization(self) -> None:
+        card = JobListCard(jobs=[{"job_code": "J04217", "title": "前端", "status": "active", "head_count": 3}])
+        event = ResultEvent(reply_message="岗位列表", cards=[card])
+        data = json.loads(event.model_dump_json())
+        assert data["cards"][0]["type"] == "job_list"
+
+    def test_funnel_card_serialization(self) -> None:
+        card = FunnelCard(
+            job_code="J04217",
+            job_title="前端",
+            stages=[FunnelStage(status="待审核", count=10, percentage=50.0)],
+        )
+        event = ResultEvent(reply_message="漏斗", cards=[card])
+        data = json.loads(event.model_dump_json())
+        assert data["cards"][0]["type"] == "funnel"
+
+    def test_confirm_card_serialization(self) -> None:
+        card = ConfirmCard(action="确认操作", params={"key": "value"})
+        event = ResultEvent(reply_message="请确认", cards=[card])
+        data = json.loads(event.model_dump_json())
+        assert data["cards"][0]["type"] == "confirm"
+
+    def test_mixed_card_types_serialization(self) -> None:
+        """Mixed card types in a single ResultEvent"""
+        cards: list = [
+            JobListCard(jobs=[{"job_code": "J04217", "title": "前端", "status": "active", "head_count": 3}]),
+            ConfirmCard(action="操作", params={}),
+        ]
+        event = ResultEvent(reply_message="混合卡片", cards=cards)
+        data = json.loads(event.model_dump_json())
+        assert len(data["cards"]) == 2
+        assert data["cards"][0]["type"] == "job_list"
+        assert data["cards"][1]["type"] == "confirm"
+
+    def test_result_event_without_cards(self) -> None:
+        event = ResultEvent(reply_message="无卡片")
+        data = json.loads(event.model_dump_json())
+        assert data.get("cards") is None
