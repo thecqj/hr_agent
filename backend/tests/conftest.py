@@ -174,10 +174,12 @@ async def recruiter_with_job(
         json={
             "title": "高级前端工程师",
             "description": "负责公司核心产品的前端开发工作",
+            "requirements": "3年以上前端开发经验",
             "skills_required": ["React", "TypeScript", "CSS"],
             "location": "北京",
             "work_type": "onsite",
             "interview_quota": 2,
+            "head_count": 1,
         },
         headers=recruiter_headers,
     )

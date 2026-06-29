@@ -42,7 +42,13 @@ class Job(Base, TimestampMixin):
     work_type: Mapped[WorkType] = mapped_column(Enum(WorkType), default=WorkType.ONSITE)
     skills_required: Mapped[list[str]] = mapped_column(JSON, default=list)
     status: Mapped[JobStatus] = mapped_column(Enum(JobStatus), default=JobStatus.ACTIVE)
-    interview_quota: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    job_code: Mapped[str] = mapped_column(
+        String(6), unique=True, nullable=False, index=True
+    )   # 格式: J10000 ~ J99999，全局唯一
+    head_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1
+    )   # 最终招聘人数
+    interview_quota: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
     # 关联
     recruiter: Mapped["User"] = relationship("User", back_populates="jobs", foreign_keys=[recruiter_id])

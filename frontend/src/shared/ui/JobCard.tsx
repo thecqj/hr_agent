@@ -29,6 +29,7 @@ export function JobCard({ job, applied = false }: JobCardProps) {
       <Link to={`/jobs/${job.id}`} className="block flex-1 hover:no-underline">
         <CardContent className="p-6">
           <h3 className="text-lg font-semibold">{job.title}</h3>
+          <p className="text-xs text-muted-foreground font-mono">{job.job_code}</p>
           <p className="text-sm text-muted-foreground mt-1">
             {locationParts.join(" · ")}
             {job.work_type && ` · ${WORK_TYPE_LABELS[job.work_type] ?? job.work_type}`}

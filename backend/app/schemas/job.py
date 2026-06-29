@@ -18,7 +18,8 @@ class JobCreateRequest(BaseModel):
     location: Optional[str] = Field(None, description="工作地点")
     work_type: WorkType = Field(default=WorkType.ONSITE, description="工作类型")
     skills_required: list[str] = Field(default_factory=list, description="所需技能列表")
-    interview_quota: Optional[int] = Field(None, description="面试人数上限")
+    interview_quota: int = Field(default=1, description="面试人数上限")
+    head_count: int = Field(default=1, description="最终招聘人数")
 
 
 class JobUpdateRequest(BaseModel):
@@ -33,6 +34,7 @@ class JobUpdateRequest(BaseModel):
     work_type: Optional[WorkType] = Field(None, description="工作类型")
     skills_required: Optional[list[str]] = Field(None, description="所需技能列表")
     interview_quota: Optional[int] = Field(None, description="面试人数上限")
+    head_count: Optional[int] = Field(None, description="最终招聘人数")
 
 
 class JobStatusUpdateRequest(BaseModel):
@@ -57,7 +59,9 @@ class JobResponse(BaseModel):
     updated_at: datetime
     recruiter_name: Optional[str] = None
     applications_count: int = 0
-    interview_quota: Optional[int] = None
+    interview_quota: int = 1
+    head_count: int = 1
+    job_code: str
 
     model_config = {"from_attributes": True}
 

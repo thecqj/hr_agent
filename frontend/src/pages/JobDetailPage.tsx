@@ -124,6 +124,7 @@ export default function JobDetailPage() {
       {/* Header section */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold">{job.title}</h1>
+        <p className="text-sm text-muted-foreground font-mono">{job.job_code}</p>
         <div className="flex flex-wrap items-center gap-4 mt-2 text-sm text-muted-foreground">
           {job.recruiter_name && (
             <span className="inline-flex items-center gap-1">
