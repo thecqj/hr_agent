@@ -21,6 +21,7 @@ async def test_trigger_evaluation_unauthorized(
         json={
             "title": "测试岗位-权限",
             "description": "描述",
+            "requirements": "3年以上开发经验",
             "skills_required": ["Python"],
         },
         headers=auth_headers_recruiter,
