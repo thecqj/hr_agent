@@ -44,7 +44,22 @@ class BorderlineReview(BaseModel):
 class IntentResult(BaseModel):
     """意图识别结果"""
 
-    intent: Literal["evaluate", "help", "unknown"] = Field(
+    intent: Literal[
+        "evaluate",
+        "list_jobs",
+        "job_detail",
+        "pending_count",
+        "interview_count",
+        "candidate_eval",
+        "funnel",
+        "candidate_list",
+        "status_change",
+        "job_status",
+        "confirm",
+        "cancel",
+        "help",
+        "unknown",
+    ] = Field(
         ..., description="识别出的意图类型"
     )
     confidence: float = Field(
@@ -52,7 +67,7 @@ class IntentResult(BaseModel):
     )
     extracted_params: dict[str, Any] = Field(
         default_factory=dict,
-        description="提取的参数（evaluate 时包含 job_title, interview_quota 等）",
+        description="提取的参数（各意图对应不同参数键）",
     )
     clarifying_question: str | None = Field(
         None, description="置信度低时的追问（仅 unknown 时）"
