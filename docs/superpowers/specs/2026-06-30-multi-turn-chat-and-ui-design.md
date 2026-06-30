@@ -154,7 +154,10 @@ context_entities: dict            # 结构化实体 {current_job_id, current_job
 
 **`GET /api/chat/session`**
 
+- 查询参数：`session_id: str`（可选）
 - 返回当前用户的活跃会话信息：`{ session_id, has_history: bool }`
+- 若传入 `session_id`：检查该会话是否仍活跃，返回其状态
+- 若未传入：返回该用户最近一条活跃会话
 - 前端刷新页面后可调用，判断是否恢复旧会话
 
 ### 3.3 SSE 事件流变更
