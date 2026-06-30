@@ -1,3 +1,5 @@
+from typing import Any
+
 """对话 Agent 的 LLM 提示词模板"""
 
 INTENT_SYSTEM_PROMPT = """你是一个 HR 招聘助手的意图识别模块。根据用户消息，判断其意图并提取参数。
@@ -73,6 +75,65 @@ INTENT_SYSTEM_PROMPT = """你是一个 HR 招聘助手的意图识别模块。�
 }"""
 
 
-def build_intent_user_prompt(user_message: str) -> str:
-    """构建意图识别的用户提示词"""
-    return f"用户消息：{user_message}"
+def build_intent_user_prompt(
+    user_message: str,
+    *,
+    session_summary: str | None = None,
+    context_entities: dict[str, Any] | None = None,
+    recent_history: list[dict[str, str]] | None = None,
+) -> str:
+    """构建意图识别的用户提示词（支持多轮上下文）"""
+    parts: list[str] = []
+
+    if session_summary:
+        parts.append(f"[对话摘要]\n{session_summary}")
+
+    if context_entities and any(context_entities.values()):
+        entity_lines = [f"  {k}: {v}" for k, v in context_entities.items() if v]
+        if entity_lines:
+            parts.append(f"[当前对话实体]\n" + "\n".join(entity_lines))
+
+    if recent_history:
+        history_lines = []
+        for msg in recent_history:
+            role_label = "用户" if msg["role"] == "user" else "助手"
+            history_lines.append(f"  {role_label}: {msg['content']}")
+        parts.append("[最近对话]\n" + "\n".join(history_lines))
+
+    parts.append(f"用户消息：{user_message}")
+
+    return "\n\n".join(parts)
+
+
+SUMMARIZE_SYSTEM_PROMPT = """你是一个对话摘要生成器。你的任务是将一段 HR 招聘助手与用户的对话历史压缩为简洁摘要。
+
+规则：
+- 保留所有关键实体：岗位编号（job_code）、岗位名称、候选人姓名、申请 ID
+- 保留用户执行的操作及其结果（如"已筛选 J001 的简历，推荐 3 人"）
+- 保留用户表达的偏好和意图
+- 摘要不超过 500 字
+- 如果提供了已有摘要，将其与新对话合并生成更新后的摘要
+
+严格按照以下 JSON 格式输出，不要输出任何其他内容：
+{
+  "summary": "<压缩后的摘要文本>"
+}"""
+
+
+def build_summarize_user_prompt(
+    history: list[dict[str, str]],
+    existing_summary: str | None = None,
+) -> str:
+    """构建摘要生成的用户提示词"""
+    parts: list[str] = []
+
+    if existing_summary:
+        parts.append(f"已有摘要：\n{existing_summary}")
+
+    history_lines = []
+    for msg in history:
+        role_label = "用户" if msg["role"] == "user" else "助手"
+        history_lines.append(f"{role_label}: {msg['content']}")
+    parts.append("需要压缩的对话：\n" + "\n".join(history_lines))
+
+    return "\n\n".join(parts)

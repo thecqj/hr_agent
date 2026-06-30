@@ -37,5 +37,10 @@ class ConversationState(TypedDict, total=False):
     # 操作确认
     pending_action: PendingAction | None             # 待确认操作（TypedDict 提供结构化类型安全）
 
+    # 多轮对话上下文
+    chat_history: list[dict[str, Any]]             # 完整对话历史 [{role, content, timestamp}]
+    session_summary: str | None                    # LLM 生成的早期对话摘要
+    context_entities: dict[str, Any]               # 结构化实体 {current_job_id, ...}
+
     # 错误
     errors: list[str]

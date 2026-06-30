@@ -118,6 +118,7 @@ class DeepSeekProvider(BaseLLMProvider):
     async def recognize_intent(
         self,
         user_message: str,
+        context_prompt: str | None = None,
     ) -> IntentResult:
         """识别用户消息的意图和参数"""
         from app.services.conversation.prompts import (
@@ -128,7 +129,34 @@ class DeepSeekProvider(BaseLLMProvider):
         system_prompt = INTENT_SYSTEM_PROMPT
         user_prompt = build_intent_user_prompt(user_message)
 
+        # If context_prompt is provided, prepend it to the user prompt
+        if context_prompt:
+            user_prompt = f"{context_prompt}\n\n{user_prompt}"
+
         raw = await self._call_chat(
             system_prompt, user_prompt, retries=settings.LLM_EVALUATION_RETRIES
         )
         return IntentResult.model_validate(raw)
+
+    async def summarize_conversation(
+        self,
+        history: list[dict[str, str]],
+        existing_summary: str | None = None,
+    ) -> str:
+        """生成对话摘要"""
+        from app.services.conversation.prompts import (
+            SUMMARIZE_SYSTEM_PROMPT,
+            build_summarize_user_prompt,
+        )
+
+        user_prompt = build_summarize_user_prompt(history, existing_summary)
+        raw = await self._call_chat(
+            SUMMARIZE_SYSTEM_PROMPT, user_prompt, retries=1
+        )
+
+        # raw is already parsed dict from _call_chat
+        summary = raw.get("summary", "")
+        if summary:
+            return str(summary)[:500]
+        # Fallback: try to stringify the whole response
+        return json.dumps(raw, ensure_ascii=False)[:500]

@@ -31,8 +31,31 @@ class BaseLLMProvider(ABC):
     async def recognize_intent(
         self,
         user_message: str,
+        context_prompt: str | None = None,
     ) -> IntentResult:
-        """识别用户消息的意图和参数"""
+        """识别用户消息的意图和参数
+
+        Args:
+            user_message: 用户原始消息
+            context_prompt: 包含摘要/实体/历史的上下文提示词，为 None 时退化为单轮模式
+        """
+        ...
+
+    @abstractmethod
+    async def summarize_conversation(
+        self,
+        history: list[dict[str, str]],
+        existing_summary: str | None = None,
+    ) -> str:
+        """生成对话摘要
+
+        Args:
+            history: 需要压缩的对话轮次 [{role, content}]
+            existing_summary: 已有摘要（合并更新）
+
+        Returns:
+            压缩后的摘要文本
+        """
         ...
 
     @abstractmethod

@@ -1,5 +1,6 @@
 """对话 Agent LangGraph 节点实现"""
 
+import time
 import uuid
 from typing import Any
 
@@ -19,7 +20,7 @@ from app.models.evaluation_task import EvaluationTask, EvalTaskStatus
 from app.models.job import Job, JobStatus
 from app.models.user import User
 from app.services.agent.state import EvaluationState
-from app.services.conversation.state import ConversationState
+from app.services.conversation.state import ConversationState, PendingAction
 from app.schemas.application import ApplicationStatusUpdateRequest
 from app.schemas.job import JobStatusUpdateRequest
 from app.services.job_service import resolve_job, list_jobs as svc_list_jobs, update_job_status
@@ -46,25 +47,88 @@ def _get_llm_provider() -> BaseLLMProvider:
     raise ValueError(f"不支持的 LLM 提供商: {provider}")
 
 
+def _build_context_prompt(state: ConversationState) -> str | None:
+    """从 state 中构建上下文提示词，用于意图识别
+
+    如果没有上下文信息，返回 None（退化为单轮模式）。
+    """
+    session_summary: str | None = state.get("session_summary")
+    context_entities: dict[str, Any] | None = state.get("context_entities")
+    chat_history: list[dict[str, Any]] | None = state.get("chat_history")
+
+    parts: list[str] = []
+
+    if session_summary:
+        parts.append(f"[对话摘要]\n{session_summary}")
+
+    if context_entities and any(context_entities.values()):
+        entity_lines = [f"  {k}: {v}" for k, v in context_entities.items() if v]
+        if entity_lines:
+            parts.append(f"[当前对话实体]\n" + "\n".join(entity_lines))
+
+    # Take the last 5 turns from chat_history
+    if chat_history and len(chat_history) > 0:
+        recent_turns = chat_history[-5:]
+        history_lines = []
+        for t in recent_turns:
+            role_label = "用户" if t["role"] == "user" else "助手"
+            history_lines.append(f"  {role_label}: {t['content']}")
+        parts.append("[最近对话]\n" + "\n".join(history_lines))
+
+    if not parts:
+        return None
+
+    return "\n\n".join(parts)
+
+
+def _update_context_entities(
+    state: ConversationState,
+    updates: dict[str, Any],
+) -> dict[str, Any]:
+    """Merge entity updates into context_entities and return the updated dict"""
+    existing: dict[str, Any] = dict(state.get("context_entities", {}) or {})
+    existing.update(updates)
+    return {"context_entities": existing}
+
+
 async def intent_node(state: ConversationState) -> dict[str, Any]:
-    """意图识别节点：解析用户消息，提取意图和参数"""
+    """意图识别节点：解析用户消息，提取意图和参数（支持多轮上下文）"""
     user_message = state.get("user_message", "")
 
     await adispatch_custom_event("thinking", {"status": "正在理解您的指令..."})
 
+    # Build context prompt from state
+    context_prompt = _build_context_prompt(state)
+
     provider: BaseLLMProvider | None = None
     try:
         provider = _get_llm_provider()
-        result = await provider.recognize_intent(user_message)
+        result = await provider.recognize_intent(user_message, context_prompt=context_prompt)
+
+        extracted_params = result.extracted_params
+
+        # Merge missing params from context_entities
+        # Nodes store entities with "current_" prefix (e.g. current_job_code),
+        # but extracted_params uses the shorter form (e.g. job_code).
+        context_entities: dict[str, Any] = state.get("context_entities", {})
+        _ENTITY_TO_PARAM_MAP: dict[str, str] = {
+            "current_job_code": "job_code",
+            "current_job_id": "job_id",
+            "current_candidate_name": "candidate_name",
+        }
+        if context_entities:
+            for entity_key, param_key in _ENTITY_TO_PARAM_MAP.items():
+                if param_key not in extracted_params and context_entities.get(entity_key):
+                    extracted_params[param_key] = context_entities[entity_key]
 
         await adispatch_custom_event("intent", {
             "intent": result.intent,
-            "params": result.extracted_params,
+            "params": extracted_params,
         })
 
         return {
             "intent": result.intent,
-            "extracted_params": result.extracted_params,
+            "extracted_params": extracted_params,
             "clarifying_question": result.clarifying_question,
         }
     except Exception as exc:
@@ -223,6 +287,7 @@ async def dispatch_node(state: ConversationState) -> dict[str, Any]:
                 "rejected_count": 0,
                 "result_page_url": f"/dashboard/evaluation/{existing_task.id}",
             }],
+            **_update_context_entities(state, {"current_job_id": str(matched_job.id), "current_job_code": matched_job.job_code, "task_id": str(existing_task.id)}),
         }
 
     # ── 创建评估任务 ──────────────────────────────────────
@@ -308,6 +373,7 @@ async def dispatch_node(state: ConversationState) -> dict[str, Any]:
     return {
         "task_id": task_id_str,
         "evaluation_status": eval_status,
+        **_update_context_entities(state, {"current_job_id": str(matched_job.id), "current_job_code": matched_job.job_code, "task_id": task_id_str}),
     }
 
 
@@ -394,6 +460,7 @@ async def job_detail_node(state: ConversationState) -> dict[str, Any]:
         return {
             "reply_message": f"📋 岗位「{job.title}」({job.job_code})详情：",
             "reply_cards": [{"type": "job_detail", "job": job_data}],
+            **_update_context_entities(state, {"current_job_id": str(job.id), "current_job_code": job.job_code}),
         }
 
     # Scoped detail
@@ -404,7 +471,10 @@ async def job_detail_node(state: ConversationState) -> dict[str, Any]:
         "quota": ("招聘指标", f"编制 {job.head_count} 人，进面名额 {job.interview_quota} 人"),
     }
     label, content = scope_map.get(detail_scope, ("详情", job.description))
-    return {"reply_message": f"📋 {job.title}({job.job_code}) — {label}：\n{content}"}
+    return {
+        "reply_message": f"📋 {job.title}({job.job_code}) — {label}：\n{content}",
+        **_update_context_entities(state, {"current_job_id": str(job.id), "current_job_code": job.job_code}),
+    }
 
 
 async def pending_count_node(state: ConversationState) -> dict[str, Any]:
@@ -429,8 +499,14 @@ async def pending_count_node(state: ConversationState) -> dict[str, Any]:
     count = await count_by_job_and_status(db, str(job.id), "pending")
 
     if count == 0:
-        return {"reply_message": f"📋 岗位「{job.title}」({job.job_code})暂无待审核简历。"}
-    return {"reply_message": f"📋 岗位「{job.title}」({job.job_code})有 {count} 份待审核简历。"}
+        return {
+            "reply_message": f"📋 岗位「{job.title}」({job.job_code})暂无待审核简历。",
+            **_update_context_entities(state, {"current_job_id": str(job.id), "current_job_code": job.job_code}),
+        }
+    return {
+        "reply_message": f"📋 岗位「{job.title}」({job.job_code})有 {count} 份待审核简历。",
+        **_update_context_entities(state, {"current_job_id": str(job.id), "current_job_code": job.job_code}),
+    }
 
 
 async def interview_count_node(state: ConversationState) -> dict[str, Any]:
@@ -455,8 +531,14 @@ async def interview_count_node(state: ConversationState) -> dict[str, Any]:
     count = await count_by_job_and_status(db, str(job.id), "interview")
 
     if count == 0:
-        return {"reply_message": f"📋 岗位「{job.title}」({job.job_code})暂无面试中的候选人。"}
-    return {"reply_message": f"📋 岗位「{job.title}」({job.job_code})有 {count} 位候选人正在面试中。"}
+        return {
+            "reply_message": f"📋 岗位「{job.title}」({job.job_code})暂无面试中的候选人。",
+            **_update_context_entities(state, {"current_job_id": str(job.id), "current_job_code": job.job_code}),
+        }
+    return {
+        "reply_message": f"📋 岗位「{job.title}」({job.job_code})有 {count} 位候选人正在面试中。",
+        **_update_context_entities(state, {"current_job_id": str(job.id), "current_job_code": job.job_code}),
+    }
 
 
 async def candidate_eval_node(state: ConversationState) -> dict[str, Any]:
@@ -506,6 +588,7 @@ async def candidate_eval_node(state: ConversationState) -> dict[str, Any]:
 
     return {
         "reply_message": f"📋 候选人「{name}」评估结果：\n• AI 评分：{score_str}\n• AI 决策：{decision_str}\n• 决策原因：{reason_str}\n• 当前状态：{status_str}",
+        **_update_context_entities(state, {"current_candidate_name": name, "current_job_id": str(app.job_id) if app.job_id else None}),
     }
 
 
@@ -532,7 +615,10 @@ async def funnel_node(state: ConversationState) -> dict[str, Any]:
 
     total = sum(grouped.values())
     if total == 0:
-        return {"reply_message": f"📋 岗位「{job.title}」({job.job_code})暂无投递记录。"}
+        return {
+            "reply_message": f"📋 岗位「{job.title}」({job.job_code})暂无投递记录。",
+            **_update_context_entities(state, {"current_job_id": str(job.id), "current_job_code": job.job_code}),
+        }
 
     stages = []
     status_labels = {"pending": "待审核", "interview": "面试中", "rejected": "已拒绝", "hired": "已录用"}
@@ -552,6 +638,7 @@ async def funnel_node(state: ConversationState) -> dict[str, Any]:
             "job_title": job.title,
             "stages": stages,
         }],
+        **_update_context_entities(state, {"current_job_id": str(job.id), "current_job_code": job.job_code}),
     }
 
 
@@ -579,7 +666,10 @@ async def candidate_list_node(state: ConversationState) -> dict[str, Any]:
 
     if not apps:
         filter_label = "AI 推荐" if decision_filter == "recommend" else ""
-        return {"reply_message": f"📋 岗位「{job.title}」({job.job_code})暂无{filter_label}候选人。"}
+        return {
+            "reply_message": f"📋 岗位「{job.title}」({job.job_code})暂无{filter_label}候选人。",
+            **_update_context_entities(state, {"current_job_id": str(job.id), "current_job_code": job.job_code}),
+        }
 
     candidates = [
         {
@@ -600,70 +690,56 @@ async def candidate_list_node(state: ConversationState) -> dict[str, Any]:
             "job_title": job.title,
             "candidates": candidates,
         }],
+        **_update_context_entities(state, {"current_job_id": str(job.id), "current_job_code": job.job_code}),
     }
 
 
 async def feedback_node(state: ConversationState) -> dict[str, Any]:
-    """结果反馈节点：格式化结果摘要"""
+    """结果反馈节点：格式化结果摘要 + 更新对话历史 + 摘要压缩"""
     db = _get_db()
     intent = state.get("intent", "unknown")
+    reply_message = state.get("reply_message", "")
 
-    # 如果 dispatch_node 已经设置了 reply_message
-    if state.get("reply_message"):
-        # pending_action 冲突：当存在 pending_action 且当前意图不是确认/取消/状态变更/岗位状态时，
-        # 隐式取消待确认操作
+    # ── pending_action 冲突处理 ──────────────────────────────
+    reply_message_payload: str = ""
+    if reply_message:
         pending = state.get("pending_action")
         if pending and intent not in ("confirm", "cancel", "status_change", "job_status"):
-            return {
-                "pending_action": None,
-                "reply_message": state["reply_message"] + "\n（已取消待确认操作）",
-            }
-        return {}
-
-    # evaluate 意图
-    if intent == "evaluate":
-        task_id = state.get("task_id")
-        if not task_id:
-            return {"reply_message": "❌ 评估任务创建失败，请重试。"}
-
-        task = await db.get(EvaluationTask, task_id)
-        if not task:
-            return {"reply_message": "❌ 评估任务不存在。"}
-
-        job = await db.get(Job, task.job_id)
-        job_title = job.title if job else "未知岗位"
-
-        if task.status == EvalTaskStatus.COMPLETED:
-            summary = task.result_summary or {}
-            recommend_count = summary.get("recommend_count", 0)
-            reject_count = summary.get("reject_count", 0)
-
-            return {
-                "reply_message": f"✅ 已完成「{job_title}」岗位的简历评估，共 {task.total_count} 份简历，推荐 {recommend_count} 人进入面试。",
-                "reply_cards": [{
-                    "type": "evaluation_summary",
-                    "task_id": task_id,
-                    "job_title": job_title,
-                    "total_count": task.total_count,
-                    "recommended_count": recommend_count,
-                    "rejected_count": reject_count,
-                    "result_page_url": f"/dashboard/evaluation/{task_id}",
-                }],
-                "result_page_url": f"/dashboard/evaluation/{task_id}",
-            }
-        elif task.status == EvalTaskStatus.FAILED:
-            return {
-                "reply_message": f"❌ 评估失败：{task.error_message or '未知错误'}",
-            }
+            reply_message_payload = reply_message + "\n（已取消待确认操作）"
+            pending_action_payload: PendingAction | None = None
         else:
-            return {
-                "reply_message": f"⏳ 评估任务状态：{task.status.value}，请稍后查看。",
-            }
+            reply_message_payload = reply_message
+            pending_action_payload = state.get("pending_action")
+    else:
+        pending_action_payload = state.get("pending_action")
 
-    # help 意图
-    if intent == "help":
-        return {
-            "reply_message": (
+    # ── 构建反馈消息（保留原有逻辑）──────────────────────────
+    if not reply_message_payload:
+        # evaluate 意图
+        if intent == "evaluate":
+            task_id = state.get("task_id")
+            if not task_id:
+                reply_message_payload = "❌ 评估任务创建失败，请重试。"
+            else:
+                task = await db.get(EvaluationTask, task_id)
+                if not task:
+                    reply_message_payload = "❌ 评估任务不存在。"
+                else:
+                    job = await db.get(Job, task.job_id)
+                    job_title = job.title if job else "未知岗位"
+
+                    if task.status == EvalTaskStatus.COMPLETED:
+                        summary = task.result_summary or {}
+                        recommend_count = summary.get("recommend_count", 0)
+                        reject_count = summary.get("reject_count", 0)
+                        reply_message_payload = f"✅ 已完成「{job_title}」岗位的简历评估，共 {task.total_count} 份简历，推荐 {recommend_count} 人进入面试。"
+                    elif task.status == EvalTaskStatus.FAILED:
+                        reply_message_payload = f"❌ 评估失败：{task.error_message or '未知错误'}"
+                    else:
+                        reply_message_payload = f"⏳ 评估任务状态：{task.status.value}，请稍后查看。"
+
+        elif intent == "help":
+            reply_message_payload = (
                 "我可以帮您完成以下操作：\n\n"
                 "📋 **岗位管理**\n"
                 "• 「有哪些活跃岗位？」— 查询岗位列表\n"
@@ -681,18 +757,64 @@ async def feedback_node(state: ConversationState) -> dict[str, Any]:
                 "🔍 **简历筛选**\n"
                 "• 「帮我筛选前端岗位的简历」— AI 筛选简历\n"
                 "• 「前端岗位选5人进面试」— 指定进面人数"
-            ),
-        }
+            )
+        elif intent == "cancel":
+            reply_message_payload = "✅ 已取消。"
+        else:
+            clarifying = state.get("clarifying_question")
+            reply_message_payload = clarifying or "抱歉，我没有理解您的意思。输入「帮助」查看我能做什么。"
 
-    # cancel 意图但无 pending_action
-    if intent == "cancel":
-        return {"reply_message": "✅ 已取消。"}
+    # ── 更新 chat_history ────────────────────────────────────
+    chat_history: list[dict[str, Any]] = list(state.get("chat_history") or [])
+    chat_history.append({
+        "role": "user",
+        "content": state.get("user_message", ""),
+        "timestamp": time.time(),
+    })
+    chat_history.append({
+        "role": "assistant",
+        "content": reply_message_payload,
+        "timestamp": time.time(),
+    })
 
-    # unknown 意图
-    clarifying = state.get("clarifying_question")
-    return {
-        "reply_message": clarifying or "抱歉，我没有理解您的意思。输入「帮助」查看我能做什么。",
+    # ── 摘要压缩 ────────────────────────────────────────────
+    session_summary: str | None = state.get("session_summary")
+    SUMMARY_THRESHOLD = 10  # 超过 10 轮时压缩
+
+    if len(chat_history) > SUMMARY_THRESHOLD:
+        provider: BaseLLMProvider | None = None
+        try:
+            provider = _get_llm_provider()
+            # 压缩前 5 轮（最旧的 5 条消息 = 2-3 对话轮次）
+            old_turns = chat_history[:5]
+            new_summary = await provider.summarize_conversation(
+                [{"role": t["role"], "content": t["content"]} for t in old_turns],
+                existing_summary=session_summary,
+            )
+            # 截断到 500 字
+            if len(new_summary) > 500:
+                new_summary = new_summary[:500]
+            session_summary = new_summary
+            # 保留最近 5 轮
+            chat_history = chat_history[5:]
+        except Exception:
+            # 摘要失败不阻塞，保留原始历史
+            pass
+        finally:
+            if provider is not None:
+                await provider.close()
+
+    result: dict[str, Any] = {
+        "reply_message": reply_message_payload,
+        "chat_history": chat_history,
+        "session_summary": session_summary,
+        "reply_cards": None,  # Clear cards from previous turns
     }
+
+    if pending_action_payload is not None or state.get("pending_action") is not None:
+        result["pending_action"] = pending_action_payload
+
+    return result
 
 
 # ── 确认 / 操作类节点 ────────────────────────────────────────────
@@ -819,6 +941,7 @@ async def status_change_node(state: ConversationState) -> dict[str, Any]:
         return {
             "reply_message": f"✅ 已将候选人「{name}」推进到{status_label}。",
             "pending_action": None,
+            **_update_context_entities(state, {"current_candidate_name": name}),
         }
     except Exception as exc:
         return {
@@ -887,6 +1010,7 @@ async def job_status_action_node(state: ConversationState) -> dict[str, Any]:
         return {
             "reply_message": f"✅ 已{action_label}岗位「{job.title}」({job.job_code})。",
             "pending_action": None,
+            **_update_context_entities(state, {"current_job_id": str(job.id), "current_job_code": job.job_code}),
         }
     except Exception as exc:
         return {

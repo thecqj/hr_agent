@@ -1,6 +1,7 @@
 """对话 Agent 节点测试"""
 
 import uuid
+from typing import Any
 
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
@@ -128,12 +129,14 @@ class TestFeedbackNode:
             "current_user_id": "test-user",
             "intent": "help",
             "errors": [],
+            "chat_history": [],
         }
 
         with patch("app.services.conversation.nodes._get_db"):
             result = await feedback_node(state)
 
         assert "岗位管理" in result["reply_message"]
+        assert "chat_history" in result
 
     @pytest.mark.asyncio
     async def test_unknown_feedback(self) -> None:
@@ -144,12 +147,14 @@ class TestFeedbackNode:
             "intent": "unknown",
             "clarifying_question": "请问您想执行什么操作？",
             "errors": [],
+            "chat_history": [],
         }
 
         with patch("app.services.conversation.nodes._get_db"):
             result = await feedback_node(state)
 
         assert "请问您想执行什么操作" in result["reply_message"]
+        assert "chat_history" in result
 
     @pytest.mark.asyncio
     async def test_pre_set_reply_message(self) -> None:
@@ -160,13 +165,15 @@ class TestFeedbackNode:
             "intent": "evaluate",
             "reply_message": "❌ 未找到匹配的岗位。",
             "errors": [],
+            "chat_history": [],
         }
 
         with patch("app.services.conversation.nodes._get_db"):
             result = await feedback_node(state)
 
-        # reply_message 已存在，feedback_node 应返回空 dict
-        assert result == {}
+        # reply_message 已存在，feedback_node 应保留并附带 chat_history
+        assert result["reply_message"] == "❌ 未找到匹配的岗位。"
+        assert "chat_history" in result
 
 
 class TestRouteByIntent:
@@ -837,6 +844,7 @@ class TestPendingActionEdgeCase:
             "extracted_params": {"status_filter": "active"},
             "pending_action": {"intent": "status_change", "params": {"candidate_name": "张三"}},
             "reply_message": "共 2 个岗位：",
+            "chat_history": [],
         }
         with patch("app.services.conversation.nodes._get_db"):
             result = await feedback_node(state)
@@ -848,17 +856,22 @@ class TestPendingActionEdgeCase:
 class TestFeedbackNodeExtended:
     @pytest.mark.asyncio
     async def test_list_jobs_feedback(self) -> None:
-        """list_jobs already set reply_message, feedback doesn't override"""
+        """list_jobs already set reply_message, feedback preserves it with chat_history"""
         state: ConversationState = {
             "user_message": "有哪些岗位？",
             "current_user_id": "u1",
             "intent": "list_jobs",
             "reply_message": "共 3 个岗位：",
             "reply_cards": [{"type": "job_list", "jobs": []}],
+            "chat_history": [],
         }
         with patch("app.services.conversation.nodes._get_db"):
             result = await feedback_node(state)
-        assert result == {}
+        # feedback_node now returns reply_message + chat_history instead of empty dict
+        assert result["reply_message"] == "共 3 个岗位："
+        assert "chat_history" in result
+        assert result["chat_history"][0]["role"] == "user"
+        assert result["chat_history"][1]["role"] == "assistant"
 
     @pytest.mark.asyncio
     async def test_pending_action_cleared_on_new_intent(self) -> None:
@@ -869,6 +882,7 @@ class TestFeedbackNodeExtended:
             "intent": "list_jobs",
             "pending_action": {"intent": "status_change", "params": {}},
             "reply_message": "共 3 个岗位：",
+            "chat_history": [],
         }
         with patch("app.services.conversation.nodes._get_db"):
             result = await feedback_node(state)
@@ -884,10 +898,12 @@ class TestFeedbackNodeExtended:
             "current_user_id": "u1",
             "intent": "cancel",
             "errors": [],
+            "chat_history": [],
         }
         with patch("app.services.conversation.nodes._get_db"):
             result = await feedback_node(state)
         assert "已取消" in result["reply_message"]
+        assert "chat_history" in result
 
     @pytest.mark.asyncio
     async def test_help_feedback_updated(self) -> None:
@@ -896,6 +912,7 @@ class TestFeedbackNodeExtended:
             "user_message": "帮助",
             "current_user_id": "u1",
             "intent": "help",
+            "chat_history": [],
         }
         with patch("app.services.conversation.nodes._get_db"):
             result = await feedback_node(state)
@@ -903,3 +920,228 @@ class TestFeedbackNodeExtended:
         assert "招聘进度" in result["reply_message"]
         assert "候选人管理" in result["reply_message"]
         assert "简历筛选" in result["reply_message"]
+        assert "chat_history" in result
+
+
+class TestMultiTurnIntentRecognition:
+    """多轮对话上下文感知意图识别"""
+
+    @pytest.mark.asyncio
+    async def test_context_entities_filled_in_extracted_params(self) -> None:
+        """当 context_entities 有 current_job_code 但 extracted_params 没有 job_code 时，应补全"""
+        mock_result = IntentResult(
+            intent="pending_count",
+            confidence=0.9,
+            extracted_params={},  # No job_code from LLM
+        )
+        mock_provider = AsyncMock()
+        mock_provider.recognize_intent = AsyncMock(return_value=mock_result)
+        mock_provider.close = AsyncMock()
+
+        state: ConversationState = {
+            "user_message": "还有多少简历",
+            "current_user_id": "test-user",
+            "context_entities": {"current_job_id": "job-123", "current_job_code": "J04217"},
+            "errors": [],
+        }
+
+        with patch(
+            "app.services.conversation.nodes._get_llm_provider",
+            return_value=mock_provider,
+        ), patch(
+            "app.services.conversation.nodes.adispatch_custom_event",
+            new_callable=AsyncMock,
+        ):
+            result = await intent_node(state)
+
+        # job_code should be filled from context_entities
+        assert result["extracted_params"]["job_code"] == "J04217"
+        assert result["extracted_params"]["job_id"] == "job-123"
+
+    @pytest.mark.asyncio
+    async def test_context_prompt_built_from_state(self) -> None:
+        """_build_context_prompt should return non-None when state has context"""
+        from app.services.conversation.nodes import _build_context_prompt
+
+        state: ConversationState = {
+            "user_message": "筛选这些简历",
+            "current_user_id": "test-user",
+            "context_entities": {"current_job_id": "job-123", "current_job_code": "J04217"},
+            "errors": [],
+        }
+        context = _build_context_prompt(state)
+        assert context is not None
+        assert "J04217" in context
+
+    @pytest.mark.asyncio
+    async def test_context_prompt_none_when_no_context(self) -> None:
+        """无上下文时 _build_context_prompt 返回 None"""
+        from app.services.conversation.nodes import _build_context_prompt
+
+        state: ConversationState = {
+            "user_message": "筛选简历",
+            "current_user_id": "test-user",
+            "errors": [],
+        }
+        context = _build_context_prompt(state)
+        assert context is None
+
+    @pytest.mark.asyncio
+    async def test_context_prompt_includes_session_summary(self) -> None:
+        """session_summary 应出现在上下文提示词中"""
+        from app.services.conversation.nodes import _build_context_prompt
+
+        state: ConversationState = {
+            "user_message": "那个岗位有多少简历",
+            "current_user_id": "test-user",
+            "session_summary": "用户之前讨论了前端开发岗位 J04217 的简历筛选",
+            "errors": [],
+        }
+        context = _build_context_prompt(state)
+        assert context is not None
+        assert "前端开发" in context
+
+    @pytest.mark.asyncio
+    async def test_context_prompt_includes_recent_history(self) -> None:
+        """最近对话历史应出现在上下文提示词中"""
+        from app.services.conversation.nodes import _build_context_prompt
+
+        state: ConversationState = {
+            "user_message": "筛选这些简历",
+            "current_user_id": "test-user",
+            "chat_history": [
+                {"role": "user", "content": "J001有多少简历", "timestamp": 1.0},
+                {"role": "assistant", "content": "J001有5份待审核简历", "timestamp": 2.0},
+            ],
+            "errors": [],
+        }
+        context = _build_context_prompt(state)
+        assert context is not None
+        assert "J001" in context
+
+    @pytest.mark.asyncio
+    async def test_existing_params_not_overridden_by_context(self) -> None:
+        """LLM 识别出的参数不应被 context_entities 覆盖"""
+        mock_result = IntentResult(
+            intent="pending_count",
+            confidence=0.9,
+            extracted_params={"job_code": "J99999"},  # LLM identified this
+        )
+        mock_provider = AsyncMock()
+        mock_provider.recognize_intent = AsyncMock(return_value=mock_result)
+        mock_provider.close = AsyncMock()
+
+        state: ConversationState = {
+            "user_message": "J99999有多少简历",
+            "current_user_id": "test-user",
+            "context_entities": {"current_job_code": "J04217"},
+            "errors": [],
+        }
+
+        with patch(
+            "app.services.conversation.nodes._get_llm_provider",
+            return_value=mock_provider,
+        ), patch(
+            "app.services.conversation.nodes.adispatch_custom_event",
+            new_callable=AsyncMock,
+        ):
+            result = await intent_node(state)
+
+        # LLM's result should NOT be overridden
+        assert result["extracted_params"]["job_code"] == "J99999"
+
+
+class TestFeedbackNodeHistory:
+    """feedback_node 的对话历史和摘要逻辑"""
+
+    @pytest.mark.asyncio
+    async def test_feedback_appends_to_chat_history(self) -> None:
+        """feedback_node 应将当前轮次追加到 chat_history"""
+        state: ConversationState = {
+            "user_message": "帮助",
+            "current_user_id": "test-user",
+            "intent": "help",
+            "errors": [],
+        }
+
+        with patch("app.services.conversation.nodes._get_db"):
+            result = await feedback_node(state)
+
+        assert "chat_history" in result
+        assert len(result["chat_history"]) == 2  # user + assistant
+        assert result["chat_history"][0]["role"] == "user"
+        assert result["chat_history"][1]["role"] == "assistant"
+        assert result["chat_history"][0]["content"] == "帮助"
+
+    @pytest.mark.asyncio
+    async def test_feedback_preserves_existing_history(self) -> None:
+        """feedback_node 应保留已有的 chat_history"""
+        existing = [
+            {"role": "user", "content": "你好", "timestamp": 1.0},
+            {"role": "assistant", "content": "你好！", "timestamp": 2.0},
+        ]
+        state: ConversationState = {
+            "user_message": "帮助",
+            "current_user_id": "test-user",
+            "intent": "help",
+            "chat_history": existing,
+            "errors": [],
+        }
+
+        with patch("app.services.conversation.nodes._get_db"):
+            result = await feedback_node(state)
+
+        assert len(result["chat_history"]) == 4  # 2 existing + 2 new
+        assert result["chat_history"][0]["content"] == "你好"
+        assert result["chat_history"][2]["content"] == "帮助"
+
+    @pytest.mark.asyncio
+    async def test_feedback_summary_triggered_when_history_exceeds_threshold(self) -> None:
+        """chat_history 超过阈值时应触发摘要压缩"""
+        # Build 12 turns of history (> 10 threshold)
+        history: list[dict[str, Any]] = []
+        for i in range(12):
+            history.append({
+                "role": "user" if i % 2 == 0 else "assistant",
+                "content": f"消息 {i}",
+                "timestamp": float(i),
+            })
+
+        mock_provider = AsyncMock()
+        mock_provider.summarize_conversation = AsyncMock(return_value="压缩后的摘要")
+        mock_provider.close = AsyncMock()
+
+        state: ConversationState = {
+            "user_message": "帮助",
+            "current_user_id": "test-user",
+            "intent": "help",
+            "chat_history": history,
+            "errors": [],
+        }
+
+        with patch("app.services.conversation.nodes._get_db"), patch(
+            "app.services.conversation.nodes._get_llm_provider",
+            return_value=mock_provider,
+        ):
+            result = await feedback_node(state)
+
+        # Summary should have been generated
+        assert result["session_summary"] == "压缩后的摘要"
+        # History should be truncated (first 5 removed, then 2 new added = 12-5+2=9)
+        assert len(result["chat_history"]) == 9
+
+    @pytest.mark.asyncio
+    async def test_feedback_no_summary_when_history_below_threshold(self) -> None:
+        """chat_history 未超过阈值时不应触发摘要压缩"""
+        state: ConversationState = {
+            "user_message": "帮助",
+            "current_user_id": "test-user",
+            "intent": "help",
+            "errors": [],
+        }
+
+        with patch("app.services.conversation.nodes._get_db"):
+            result = await feedback_node(state)
+
+        # No summary should be generated
+        assert result.get("session_summary") is None

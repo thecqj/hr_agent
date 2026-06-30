@@ -84,6 +84,19 @@ class TestChatSendEndpoint:
         mock_graph.astream_events = MagicMock(return_value=aiter([]))
         mock_graph.aget_state = AsyncMock(return_value=mock_state)
 
+        # Mock async_session to return a proper async context manager
+        # that provides a DB session with query results
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=None)))
+        mock_db.commit = AsyncMock()
+        mock_db.add = MagicMock()
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        mock_async_session = MagicMock(return_value=mock_session_ctx)
+
         # build_conversation_graph is imported locally inside the function,
         # so we patch at the source module. Also mock get_checkpointer
         # and async_session to avoid real DB connections.
@@ -94,6 +107,7 @@ class TestChatSendEndpoint:
             "app.api.chat.get_checkpointer",
         ), patch(
             "app.api.chat.async_session",
+            mock_async_session,
         ):
             response = await client.post(
                 "/api/chat/send",
@@ -102,6 +116,8 @@ class TestChatSendEndpoint:
             )
             assert response.status_code == 200
             assert "text/event-stream" in response.headers.get("content-type", "")
+            # Should contain the session event as the first event
+            assert "event: session" in response.text
 
 
 class TestCardSerialization:

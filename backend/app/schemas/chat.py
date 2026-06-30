@@ -11,6 +11,9 @@ class ChatRequest(BaseModel):
     message: str = Field(
         ..., min_length=1, max_length=500, description="用户消息"
     )
+    session_id: str | None = Field(
+        None, description="会话 ID，首次可为空"
+    )
 
 
 # ── SSE 事件 Schema ─────────────────────────────────────────
@@ -136,3 +139,25 @@ class ResultEvent(BaseModel):
 
     reply_message: str
     cards: list[ChatCard] | None = None
+
+
+# ── 会话管理 Schema ─────────────────────────────────────────
+
+
+class SessionCloseRequest(BaseModel):
+    """关闭会话请求"""
+
+    session_id: str = Field(..., description="要关闭的会话 ID")
+
+
+class SessionResponse(BaseModel):
+    """会话查询响应"""
+
+    session_id: str = Field(..., description="会话 ID")
+    has_history: bool = Field(..., description="是否存在历史对话")
+
+
+class SessionEvent(BaseModel):
+    """SSE session 事件"""
+
+    session_id: str = Field(..., description="会话 ID")
