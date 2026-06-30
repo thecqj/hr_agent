@@ -146,3 +146,62 @@ async def update_application_status(
     await db.commit()
     await db.refresh(application)
     return application
+
+
+async def count_by_job_and_status(
+    db: AsyncSession,
+    job_id: str,
+    status: str,
+) -> int:
+    """统计某岗位指定状态的申请数量"""
+    try:
+        app_status = ApplicationStatus(status)
+    except ValueError:
+        return 0
+
+    stmt = select(func.count()).select_from(Application).where(
+        Application.job_id == job_id,
+        Application.status == app_status,
+    )
+    result = (await db.execute(stmt)).scalar()
+    return result or 0
+
+
+async def count_by_job_grouped_by_status(
+    db: AsyncSession,
+    job_id: str,
+) -> dict[str, int]:
+    """按状态分组统计某岗位的申请数量
+
+    返回所有 ApplicationStatus 枚举值作为 key，计数为 0 的状态也包含在内，
+    确保下游消费者始终拿到完整的状态字典。
+    """
+    result: dict[str, int] = {s.value: 0 for s in ApplicationStatus}
+    stmt = (
+        select(Application.status, func.count())
+        .where(Application.job_id == job_id)
+        .group_by(Application.status)
+    )
+    rows = (await db.execute(stmt)).all()
+    result.update({row[0].value: row[1] for row in rows})
+    return result
+
+
+async def list_by_job(
+    db: AsyncSession,
+    job_id: str,
+    decision_filter: str | None = None,
+) -> list[Application]:
+    """列出某岗位的申请，可选按 AI decision 过滤"""
+    stmt = (
+        select(Application)
+        .where(Application.job_id == job_id)
+        .options(selectinload(Application.applicant))
+    )
+
+    if decision_filter:
+        stmt = stmt.where(Application.ai_decision == decision_filter)
+
+    stmt = stmt.order_by(Application.ai_score.desc().nullslast(), Application.created_at.desc())
+    result = await db.execute(stmt)
+    return list(result.scalars().all())

@@ -37,7 +37,7 @@ export function ChatWindow({ onClose, bubbleSide }: ChatWindowProps) {
       </div>
 
       {/* Messages */}
-      <ChatMessages messages={messages} />
+      <ChatMessages messages={messages} onSendMessage={sendMessage} />
 
       {/* Input */}
       <ChatInput onSend={sendMessage} disabled={isProcessing} />
