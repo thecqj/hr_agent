@@ -320,7 +320,7 @@ class EvaluationTask(Base, TimestampMixin):          # table "evaluation_tasks"
 | `ConfirmDecision` | `application_id: str`, `final_decision: Literal["interview","reject"]`, `override_reason?` |
 | `ConfirmRequest` | `decisions: list[ConfirmDecision]`（为空则按 AI 建议批量更新） |
 | `ConfirmResponse` | `updated_count: int`, `message: str` |
-| `IntentResult` | `intent: Literal["evaluate","help","unknown"]`, `confidence: float (0-1)`, `extracted_params: dict`, `clarifying_question?: str` |
+| `IntentResult` | `intent: Literal["evaluate","list_jobs","job_detail","pending_count","interview_count","candidate_eval","funnel","candidate_list","status_change","job_status","confirm","cancel","help","unknown"]`, `confidence: float (0-1)`, `extracted_params: dict`, `clarifying_question?: str` |
 
 #### `chat.py` — 对话助手 DTO（Phase 2）
 
@@ -332,7 +332,13 @@ class EvaluationTask(Base, TimestampMixin):          # table "evaluation_tasks"
 | `ProgressEvent` | `status: str`, `evaluated_count?: int`, `total_count?: int` |
 | `ErrorEvent` | `message: str`, `recoverable: bool` |
 | `EvaluationSummaryCard` | `type="evaluation_summary"`, `task_id`, `job_title`, `total_count`, `recommended_count`, `rejected_count`, `result_page_url` |
-| `ResultEvent` | `reply_message: str`, `cards?: list[EvaluationSummaryCard]` |
+| `JobListCard` | `type="job_list"`, `jobs: list[dict]`（每项: job_code/title/status/head_count） |
+| `JobDetailCard` | `type="job_detail"`, `job: dict`（完整岗位信息） |
+| `FunnelCard` | `type="funnel"`, `job_code`, `job_title`, `stages: list[FunnelStage]`（FunnelStage: status/count/percentage） |
+| `CandidateListCard` | `type="candidate_list"`, `job_code`, `job_title`, `candidates: list[CandidateItem]`（CandidateItem: name/ai_score?/ai_decision?/status） |
+| `ConfirmCard` | `type="confirm"`, `action`, `params: dict` |
+| `ChatCard` | `EvaluationSummaryCard \| JobListCard \| JobDetailCard \| FunnelCard \| CandidateListCard \| ConfirmCard` |
+| `ResultEvent` | `reply_message: str`, `cards?: list[ChatCard]` |
 
 ---
 
@@ -442,6 +448,9 @@ async def delete_job(db: AsyncSession, job_id: str, current_user: User) -> None
 
 async def update_job_status(db: AsyncSession, job_id: str, data: JobStatusUpdateRequest, current_user: User) -> Job
     """变更岗位状态；非拥有者→403。"""
+
+async def resolve_job(db: AsyncSession, job_code: str | None = None, job_id: str | None = None, job_title: str | None = None) -> Job | list[Job] | None
+    """岗位解析辅助：job_code（最高优先）> job_id > job_title 模糊匹配；多结果返回列表供消歧，无结果返回 None。"""
 ```
 
 #### `application_service.py`
@@ -459,6 +468,15 @@ async def get_my_applications(db, current_user, status_filter?, page?, page_size
 
 async def update_application_status(db, application_id, data, current_user) -> Application
     """招聘者更新投递状态；非拥有者→403。"""
+
+async def count_by_job_and_status(db: AsyncSession, job_id: str, status: str) -> int
+    """按岗位和状态统计投递数量；用于 pending_count / interview_count 节点。"""
+
+async def count_by_job_grouped_by_status(db: AsyncSession, job_id: str) -> dict[str, int]
+    """按岗位分组统计各状态投递数量；返回所有 ApplicationStatus 枚举值作为 key（无则为 0）；用于 funnel 节点。"""
+
+async def list_by_job(db: AsyncSession, job_id: str, decision_filter: str | None = None) -> list[Application]
+    """列出岗位的投递，可按 ai_decision 筛选，按 ai_score desc 排序；用于 candidate_list 节点。"""
 ```
 
 #### `agent_service.py`
@@ -514,23 +532,52 @@ state.py      — ConversationState(TypedDict): 对话工作流状态
                 user_message, current_user_id (输入)
                 intent, extracted_params, clarifying_question (意图识别)
                 task_id, evaluation_status (工作流调用)
+                pending_action: PendingAction | None (待确认操作；PendingAction: intent + params)
                 reply_message, reply_cards, result_page_url (反馈)
                 errors (错误)
 
 prompts.py    — 对话 LLM 提示词
-                INTENT_SYSTEM_PROMPT: 意图识别系统提示（evaluate/help/unknown）
+                INTENT_SYSTEM_PROMPT: 14 意图识别系统提示
+                  查询意图(7): list_jobs, job_detail, pending_count, interview_count, candidate_eval, funnel, candidate_list
+                  操作意图(2): status_change, job_status（需确认）
+                  元意图(5): evaluate, confirm, cancel, help, unknown
+                  规则: confidence < 0.7 → unknown; job_code(J+5位)优先于 job_title
                 build_intent_user_prompt(user_message) -> str
 
-nodes.py      — 对话 LangGraph 节点
-                intent_node(state)    -> dict   # LLM 意图识别，失败回退 unknown
-                dispatch_node(state)  -> dict   # 岗位匹配 + 内联执行评估图 + 进度转发
-                feedback_node(state)  -> dict   # 格式化结果摘要 + 评估卡片
-                route_by_intent(state) -> str   # 条件路由：evaluate→dispatch, else→feedback
+nodes.py      — 对话 LangGraph 节点（14 个）
+                核心节点(2):
+                  intent_node(state)    -> dict   # LLM 意图识别，失败回退 unknown
+                  dispatch_node(state)  -> dict   # evaluate 意图：岗位匹配 + 内联执行评估图 + 进度转发
+                查询节点(7):
+                  list_jobs_node(state)       -> dict   # 按状态筛选岗位列表
+                  job_detail_node(state)      -> dict   # 岗位详情（full/scoped）
+                  pending_count_node(state)   -> dict   # 待审核简历计数
+                  interview_count_node(state) -> dict   # 面试阶段候选人计数
+                  candidate_eval_node(state)  -> dict   # 候选人 AI 评估结果
+                  funnel_node(state)          -> dict   # 招聘漏斗/进度概览
+                  candidate_list_node(state)  -> dict   # 候选人列表（可按 decision 筛选）
+                操作/确认节点(4):
+                  confirm_node(state)           -> dict   # 生成确认提示，设置 pending_action；status_change 时解析 candidate_name → application_id
+                  cancel_node(state)            -> dict   # 清除 pending_action
+                  status_change_node(state)     -> dict   # 执行候选人状态变更（从 pending_action.params 读取）
+                  job_status_action_node(state) -> dict   # 执行岗位状态变更 open/close
+                反馈节点(1):
+                  feedback_node(state)  -> dict   # 格式化结果摘要 + 对应卡片；新意图自动取消 pending_action
 
-graph.py      — 对话图定义
+graph.py      — 对话图定义 & 路由
                 build_conversation_graph(checkpointer) -> CompiledStateGraph
-                流程：START → intent → (evaluate? → dispatch → feedback → END)
-                                        (help/unknown? → feedback → END)
+                route_by_intent(state) -> str:
+                  evaluate → dispatch
+                  7 查询意图 → 对应查询节点
+                  status_change/job_status → confirm
+                  confirm + pending_action → execute_action → route_by_pending_action
+                  confirm 无 pending → feedback
+                  cancel → cancel
+                  help/unknown → feedback
+                route_by_pending_action(state) -> str:
+                  status_change → status_change_node
+                  job_status → job_status_action_node
+                流程：START → intent → [路由] → ... → feedback → END
 ```
 
 ---
@@ -603,6 +650,8 @@ def decode_token(token: str) -> Dict[str, Any]
 | `99186d2082a7_add_structured_resume_to_applications.py` | 为 applications 添加 structured_resume JSONB 列 |
 | `1ac3bbb5967e_add_hr_agent_evaluation_fields.py` | 新增 evaluation_tasks 表；为 applications 添加 ai_* 字段；为 jobs 添加 interview_quota |
 | `9d45e7aca4fb_add_requirements_to_jobs.py` | 为 jobs 添加 requirements Text 列（NOT NULL, default=""） |
+| `0da1a2fe2051_add_job_code_and_head_count_to_jobs.py` | 为 jobs 添加 job_code String(6) unique + head_count INT NOT NULL default=1；现有行随机回填 job_code |
+| `a1b2c3d4e5f6_remove_reviewed_status.py` | 移除 reviewed 状态；现有 reviewed 记录迁移为 interview |
 
 ---
 
@@ -612,14 +661,14 @@ def decode_token(token: str) -> Dict[str, Any]
 |------|--------|---------|
 | `conftest.py` | — | 提供 async engine / session / client / auth_headers 夹具 |
 | `test_auth_api.py` | 11 | 注册、登录、令牌刷新、me、登出 |
-| `test_jobs_api.py` | 12 | 岗位 CRUD、权限、筛选、申请计数 |
-| `test_applications_api.py` | 8 | 投递、权限、状态更新 |
+| `test_jobs_api.py` | 15 | 岗位 CRUD、权限、筛选、申请计数、job_code 唯一性 |
+| `test_applications_api.py` | 10 | 投递、权限、状态更新、403 已拒绝重复投递 |
 | `test_agent_nodes.py` | 8 | LangGraph 节点单元测试（mock get_config, adispatch_custom_event） |
 | `test_agent_service.py` | 8 | AgentService 单元测试（trigger/get_status/confirm） |
 | `test_agent_api.py` | 9 | Agent API 集成测试 |
-| `test_intent_recognition.py` | 9 | IntentResult schema 验证 + DeepSeek recognize_intent mock 测试 |
-| `test_conversation_nodes.py` | 10 | 对话节点测试（intent/help/unknown/dispatch/feedback/route） |
-| `test_chat_api.py` | 4 | Chat API 测试（认证、角色、验证、SSE 流） |
+| `test_intent_recognition.py` | 25 | IntentResult 14 意图 schema 验证 + DeepSeek recognize_intent mock 测试 |
+| `test_conversation_nodes.py` | 56 | 14 意图对话节点测试（7 查询 + 4 操作/确认 + feedback + confirm flow + route_by_pending_action）+ 6 种 ChatCard SSE 序列化 |
+| `test_chat_api.py` | 9 | Chat API 测试（认证、角色、验证、SSE 流） |
 
 ---
 
@@ -798,13 +847,20 @@ interface BreadcrumbItem { label: string; href?: string }
 
 | 组件 | Props | 说明 |
 |------|-------|------|
-| `ChatBubble` | 无 | 浮动气泡入口（右下角） |
-| `ChatWindow` | `onClose` | 对话窗口（header + messages + input） |
-| `ChatMessages` | `messages: ChatMessage[]` | 消息列表（自动滚动到底部） |
+| `ChatBubble` | 无 | 浮动气泡入口（右下角，可拖拽吸附） |
+| `ChatWindow` | `onClose` | 对话窗口（header + messages + input，可拖拽移动+调整大小） |
+| `ChatMessages` | `messages: ChatMessage[], onSendMessage?` | 消息列表（自动滚动到底部），传递 onSendMessage 至 AssistantMessage |
 | `ChatInput` | `onSend, disabled` | 输入框 + 发送按钮 |
-| `AssistantMessage` | `message: ChatMessage` | 助手消息气泡（含进度/卡片） |
+| `AssistantMessage` | `message: ChatMessage, onSendMessage?` | 助手消息气泡；switch dispatch 渲染 6 种 ChatCard；ConfirmCard 通过 onSendMessage 回传"确认"/"取消" |
 | `ProgressMessage` | `progress: ProgressInfo` | 进度指示器（旋转 + 计数） |
-| `EvaluationCard` | `card: ChatCard` | 可点击的评估摘要卡片 |
+| `EvaluationCard` | `card: EvaluationSummaryCardData` | 可点击的评估摘要卡片（导航至结果页） |
+| `JobListCard` | `card: JobListCardData` | 岗位列表卡片（job_code/title/status/head_count） |
+| `JobDetailCard` | `card: JobDetailCardData` | 岗位详情卡片（可折叠：职责/要求/技能） |
+| `FunnelCard` | `card: FunnelCardData` | 招聘漏斗卡片（横向条形图，各阶段计数+百分比） |
+| `CandidateListCard` | `card: CandidateListCardData` | 候选人列表卡片（name/ai_score/ai_decision/status） |
+| `ConfirmCard` | `card: ConfirmCardData, onConfirm, onCancel` | 确认操作卡片（黄色边框 + 确认/取消按钮，回传"确认"/"取消"消息） |
+
+sendMessage prop chain：ChatWindow → ChatMessages → AssistantMessage → ConfirmCard
 
 #### 对话助手 Hook（`features/chat/hooks/`）
 
@@ -818,7 +874,18 @@ interface BreadcrumbItem { label: string; href?: string }
 
 ```ts
 interface ChatMessage  { role: "user"|"assistant", content, cards?: ChatCard[], progress?: ProgressInfo, timestamp }
-interface ChatCard     { type: "evaluation_summary", task_id, job_title, total_count, recommended_count, rejected_count, result_page_url }
+
+// ChatCard — 6 种判别联合类型
+type ChatCard = EvaluationSummaryCardData | JobListCardData | JobDetailCardData | FunnelCardData | CandidateListCardData | ConfirmCardData
+interface EvaluationSummaryCardData { type: "evaluation_summary", task_id, job_title, total_count, recommended_count, rejected_count, result_page_url }
+interface JobListCardData           { type: "job_list", jobs: { job_code, title, status, head_count }[] }
+interface JobDetailCardData         { type: "job_detail", job: { job_code, title, description, requirements, skills_required, salary_min?, salary_max?, location?, work_type, head_count, interview_quota, status } }
+interface FunnelCardData            { type: "funnel", job_code, job_title, stages: FunnelStageData[] }
+interface CandidateListCardData     { type: "candidate_list", job_code, job_title, candidates: CandidateItemData[] }
+interface ConfirmCardData           { type: "confirm", action, params: Record<string, unknown> }
+interface FunnelStageData           { status, count, percentage }
+interface CandidateItemData         { name, ai_score?: number, ai_decision?: string, status }
+
 interface ProgressInfo { status, evaluated_count?, total_count? }
 ```
 
