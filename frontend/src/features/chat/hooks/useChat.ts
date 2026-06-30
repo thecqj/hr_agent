@@ -1,11 +1,42 @@
 import { useState, useRef, useCallback } from "react";
 
 import type { ChatMessage, ChatCard, ProgressInfo } from "@/features/chat/types/chat";
-import { sendChatMessage } from "@/features/chat/api/chat";
+import { sendChatMessage, closeSession as apiCloseSession, getSession } from "@/features/chat/api/chat";
+
+const SESSION_STORAGE_KEY = "chat-session-id";
+
+function generateSessionId(): string {
+  return crypto.randomUUID();
+}
+
+function loadSessionId(): string | null {
+  try {
+    return localStorage.getItem(SESSION_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function saveSessionId(id: string): void {
+  try {
+    localStorage.setItem(SESSION_STORAGE_KEY, id);
+  } catch {
+    // localStorage may be unavailable
+  }
+}
+
+function clearSessionId(): void {
+  try {
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
 
 export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(() => loadSessionId());
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const sendMessage = useCallback((text: string) => {
@@ -27,8 +58,17 @@ export function useChat() {
 
     const controller = sendChatMessage(
       text,
+      sessionId,
       (eventType, data) => {
         switch (eventType) {
+          case "session": {
+            // Server confirms/assigns session_id
+            const newSessionId = data.session_id as string;
+            setSessionId(newSessionId);
+            saveSessionId(newSessionId);
+            break;
+          }
+
           case "thinking":
             assistantContent = (data.status as string) || "思考中...";
             setMessages((prev) => {
@@ -147,7 +187,7 @@ export function useChat() {
     );
 
     abortControllerRef.current = controller;
-  }, [isProcessing]);
+  }, [isProcessing, sessionId]);
 
   const disconnect = useCallback(() => {
     if (abortControllerRef.current) {
@@ -161,11 +201,61 @@ export function useChat() {
     setMessages([]);
   }, []);
 
+  const closeSession = useCallback(async () => {
+    // Abort any in-progress request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+
+    // Call backend to close the session (triggers summary generation)
+    if (sessionId) {
+      try {
+        await apiCloseSession(sessionId);
+      } catch {
+        // Non-blocking: session close failure doesn't prevent UI reset
+      }
+    }
+
+    // Clear frontend state
+    setMessages([]);
+    setIsProcessing(false);
+
+    // Generate new session_id for next conversation
+    const newId = generateSessionId();
+    setSessionId(newId);
+    saveSessionId(newId);
+  }, [sessionId]);
+
+  /**
+   * Check if the current session is still active (e.g., after page refresh).
+   * If not, generate a new session ID.
+   */
+  const validateSession = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const info = await getSession(sessionId);
+      if (!info.has_history) {
+        // Session is no longer active or doesn't exist
+        const newId = generateSessionId();
+        setSessionId(newId);
+        saveSessionId(newId);
+      }
+    } catch {
+      // On error, keep current session_id — will be validated on next message
+    }
+  }, [sessionId]);
+
   return {
     messages,
     isProcessing,
+    sessionId,
     sendMessage,
     disconnect,
     clearMessages,
+    closeSession,
+    validateSession,
   };
 }
+
+export type UseChatReturn = ReturnType<typeof useChat>;

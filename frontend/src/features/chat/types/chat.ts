@@ -100,3 +100,10 @@ export interface ProgressInfo {
   evaluated_count?: number;
   total_count?: number;
 }
+
+// ── 会话管理 ─────────────────────────────────────────────
+
+export interface SessionInfo {
+  session_id: string;
+  has_history: boolean;
+}
