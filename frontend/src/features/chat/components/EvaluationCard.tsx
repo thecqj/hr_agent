@@ -2,10 +2,10 @@ import { useNavigate } from "react-router-dom";
 import { FileText } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
-import type { ChatCard } from "@/features/chat/types/chat";
+import type { EvaluationSummaryCardData } from "@/features/chat/types/chat";
 
 interface EvaluationCardProps {
-  card: ChatCard;
+  card: EvaluationSummaryCardData;
 }
 
 export function EvaluationCard({ card }: EvaluationCardProps) {

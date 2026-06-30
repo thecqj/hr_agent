@@ -5,9 +5,10 @@ import { AssistantMessage } from "./AssistantMessage";
 
 interface ChatMessagesProps {
   messages: ChatMessage[];
+  onSendMessage?: (text: string) => void;
 }
 
-export function ChatMessages({ messages }: ChatMessagesProps) {
+export function ChatMessages({ messages, onSendMessage }: ChatMessagesProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -29,7 +30,7 @@ export function ChatMessages({ messages }: ChatMessagesProps) {
             </div>
           </div>
         ) : (
-          <AssistantMessage key={i} message={msg} />
+          <AssistantMessage key={i} message={msg} onSendMessage={onSendMessage} />
         )
       )}
       <div ref={bottomRef} />

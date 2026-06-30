@@ -1,4 +1,5 @@
 import random
+import uuid
 
 from typing import Optional, Tuple, Sequence, Dict, Any
 
@@ -105,12 +106,12 @@ async def list_jobs(
     if current_user and current_user.role == UserRole.RECRUITER:
         query = query.where(Job.recruiter_id == current_user.id)
 
-    if status:
+    if status and status != "all":
         try:
             query = query.where(Job.status == JobStatus(status))
         except ValueError:
             pass
-    else:
+    elif status != "all":
         query = query.where(Job.status == JobStatus.ACTIVE)
 
     count_query = select(func.count()).select_from(query.subquery())
@@ -168,3 +169,54 @@ async def update_job_status(
     await db.commit()
     await db.refresh(job, attribute_names=["applications"])
     return job
+
+
+async def resolve_job(
+    db: AsyncSession,
+    recruiter_id: str,
+    job_code: str | None = None,
+    job_title_keyword: str | None = None,
+) -> Job | list[Job] | None:
+    """精确匹配 job_code，或模糊匹配 job_title。
+
+    Args:
+        db: 数据库会话
+        recruiter_id: 招聘者 ID (UUID 字符串)
+        job_code: 岗位编号（优先级最高，精确匹配）
+        job_title_keyword: 岗位名称关键词（模糊匹配）
+
+    Returns:
+        单个 Job（精确匹配或唯一模糊匹配）
+        list[Job]（模糊匹配多个，需消歧）
+        None（未找到）
+    """
+    # Priority 1: job_code exact match
+    if job_code:
+        result = await db.execute(
+            select(Job).where(Job.job_code == job_code)
+        )
+        job = result.scalar_one_or_none()
+        if job is None:
+            return None
+        if str(job.recruiter_id) != recruiter_id:
+            return None
+        return job
+
+    # Priority 2: job_title fuzzy match
+    if job_title_keyword:
+        escaped_keyword = job_title_keyword.lower().replace("%", "\\%").replace("_", "\\_")
+        stmt = select(Job).where(
+            Job.recruiter_id == uuid.UUID(recruiter_id),
+            Job.status == JobStatus.ACTIVE,
+            func.lower(Job.title).ilike(f"%{escaped_keyword}%", escape="\\"),
+        )
+        matching_jobs = list((await db.execute(stmt)).scalars().all())
+
+        if len(matching_jobs) == 0:
+            return None
+        elif len(matching_jobs) == 1:
+            return matching_jobs[0]
+        else:
+            return matching_jobs
+
+    return None
