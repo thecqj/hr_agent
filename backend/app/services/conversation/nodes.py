@@ -563,7 +563,7 @@ async def candidate_list_node(state: ConversationState) -> dict[str, Any]:
 
     job_code = params.get("job_code")
     job_title = params.get("job_title")
-    decision_filter = params.get("decision_filter", "recommended")
+    decision_filter = params.get("decision_filter", "recommend")
 
     resolved = await resolve_job(db, current_user_id, job_code=job_code, job_title_keyword=job_title)
 
@@ -578,7 +578,7 @@ async def candidate_list_node(state: ConversationState) -> dict[str, Any]:
     apps = await list_by_job(db, str(job.id), decision_filter=decision_filter if decision_filter != "all" else None)
 
     if not apps:
-        filter_label = "AI 推荐" if decision_filter == "recommended" else ""
+        filter_label = "AI 推荐" if decision_filter == "recommend" else ""
         return {"reply_message": f"📋 岗位「{job.title}」({job.job_code})暂无{filter_label}候选人。"}
 
     candidates = [
@@ -591,7 +591,7 @@ async def candidate_list_node(state: ConversationState) -> dict[str, Any]:
         for a in apps
     ]
 
-    filter_label = "AI 推荐" if decision_filter == "recommended" else "全部"
+    filter_label = "AI 推荐" if decision_filter == "recommend" else "全部"
     return {
         "reply_message": f"📋 岗位「{job.title}」({job.job_code}){filter_label}候选人 {len(candidates)} 人：",
         "reply_cards": [{
