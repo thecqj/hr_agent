@@ -39,13 +39,18 @@ export function useBubbleDrag() {
     ? window.innerHeight - BUBBLE_SIZE - EDGE_MARGIN
     : 600;
 
-  const [position, setPosition] = useState<BubblePosition>(
-    () => loadJson("chat-bubble-position", {
-      side: "right" as const,
-      offset: EDGE_MARGIN,
-      top: defaultTop,
-    })
-  );
+  const [position, setPosition] = useState<BubblePosition>(() => {
+    const saved = loadJson<Partial<BubblePosition>>("chat-bubble-position", {});
+    return {
+      side: saved.side ?? "right",
+      offset: typeof saved.offset === "number" && Number.isFinite(saved.offset)
+        ? saved.offset
+        : EDGE_MARGIN,
+      top: typeof saved.top === "number" && Number.isFinite(saved.top)
+        ? saved.top
+        : defaultTop,
+    };
+  });
   const [isDragging, setIsDragging] = useState(false);
   const startX = useRef(0);
   const startY = useRef(0);
@@ -62,8 +67,8 @@ export function useBubbleDrag() {
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     startX.current = e.clientX;
     startY.current = e.clientY;
-    startOffset.current = position.offset;
-    startTop.current = position.top;
+    startOffset.current = Number.isFinite(position.offset) ? position.offset : EDGE_MARGIN;
+    startTop.current = Number.isFinite(position.top) ? position.top : defaultTop;
   }, [position.offset, position.top]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
