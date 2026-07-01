@@ -14,7 +14,7 @@ from app.api.deps import get_required_user
 from app.database import async_session, get_checkpointer
 from app.models.conversation import Conversation
 from app.models.user import User, UserRole
-from app.schemas.chat import ChatRequest, SessionCloseRequest, SessionResponse
+from app.schemas.chat import ChatRequest, SessionCloseRequest, SessionResponse, HistoryResponse
 from app.services.conversation.state import ConversationState
 
 router = APIRouter(prefix="/chat", tags=["对话助手"])
@@ -161,6 +161,60 @@ async def get_session(
             session_id=session_id or "",
             has_history=False,
         )
+
+
+@router.get(
+    "/history",
+    summary="获取对话历史消息",
+)
+async def get_chat_history(
+    session_id: str = Query(..., description="会话 ID"),
+    current_user: User = Depends(get_required_user),
+) -> HistoryResponse:
+    """从 LangGraph checkpoint 读取 chat_history 并返回消息列表"""
+    # Verify the conversation belongs to the current user
+    async with async_session() as db:
+        stmt = select(Conversation).where(
+            Conversation.session_id == session_id,
+            Conversation.user_id == current_user.id,
+        )
+        result = await db.execute(stmt)
+        conversation = result.scalar_one_or_none()
+
+    if not conversation:
+        return HistoryResponse(session_id=session_id, messages=[])
+
+    # Load chat_history from LangGraph checkpoint
+    from app.services.conversation.graph import build_conversation_graph
+
+    checkpointer = get_checkpointer()
+    graph = build_conversation_graph(checkpointer)
+    config: RunnableConfig = {"configurable": {"thread_id": session_id}}
+
+    try:
+        state_result = await graph.aget_state(config)
+        final_state: ConversationState = state_result.values  # type: ignore[assignment]
+        chat_history = final_state.get("chat_history", [])
+    except Exception:
+        chat_history = []
+
+    from app.schemas.chat import HistoryMessage
+
+    messages: list[HistoryMessage] = []
+    for msg in chat_history:
+        if not isinstance(msg, dict) or "role" not in msg:
+            continue
+        role = msg["role"]
+        if role not in ("user", "assistant"):
+            continue
+        messages.append(HistoryMessage(
+            role=role,
+            content=str(msg.get("content", "")),
+            cards=msg.get("cards") if role == "assistant" else None,
+            timestamp=float(msg.get("timestamp", 0)),
+        ))
+
+    return HistoryResponse(session_id=session_id, messages=messages)
 
 
 async def _run_conversation_stream(

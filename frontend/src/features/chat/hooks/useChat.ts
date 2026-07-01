@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from "react";
 
 import type { ChatMessage, ChatCard, ProgressInfo } from "@/features/chat/types/chat";
-import { sendChatMessage, closeSession as apiCloseSession, getSession } from "@/features/chat/api/chat";
+import { sendChatMessage, closeSession as apiCloseSession, getSession, getHistory } from "@/features/chat/api/chat";
 
 const SESSION_STORAGE_KEY = "chat-session-id";
 
@@ -235,7 +235,22 @@ export function useChat() {
     if (!sessionId) return;
     try {
       const info = await getSession(sessionId);
-      if (!info.has_history) {
+      if (info.has_history) {
+        // Session exists — restore messages from backend
+        try {
+          const history = await getHistory(sessionId);
+          if (history.messages.length > 0) {
+            setMessages(history.messages.map((m) => ({
+              role: m.role,
+              content: m.content,
+              cards: m.cards as ChatCard[] | undefined,
+              timestamp: m.timestamp,
+            })));
+          }
+        } catch {
+          // History fetch failed — user starts with empty view, can still send messages
+        }
+      } else {
         // Session is no longer active or doesn't exist
         const newId = generateSessionId();
         setSessionId(newId);

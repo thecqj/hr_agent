@@ -157,6 +157,22 @@ class SessionResponse(BaseModel):
     has_history: bool = Field(..., description="是否存在历史对话")
 
 
+class HistoryMessage(BaseModel):
+    """历史消息条目"""
+
+    role: Literal["user", "assistant"] = Field(..., description="角色")
+    content: str = Field("", description="消息内容")
+    cards: list[ChatCard] | None = Field(None, description="卡片列表（仅 assistant）")
+    timestamp: float = Field(..., description="时间戳")
+
+
+class HistoryResponse(BaseModel):
+    """对话历史响应"""
+
+    session_id: str = Field(..., description="会话 ID")
+    messages: list[HistoryMessage] = Field(default_factory=list, description="消息列表")
+
+
 class SessionEvent(BaseModel):
     """SSE session 事件"""
 

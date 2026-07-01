@@ -124,3 +124,38 @@ export async function getSession(sessionId?: string): Promise<SessionInfo> {
 
   return response.json() as Promise<SessionInfo>;
 }
+
+export interface HistoryMessage {
+  role: "user" | "assistant";
+  content: string;
+  cards?: unknown[];
+  timestamp: number;
+}
+
+export interface HistoryResponse {
+  session_id: string;
+  messages: HistoryMessage[];
+}
+
+/**
+ * Fetch chat history for a given session (messages stored in LangGraph checkpoint).
+ */
+export async function getHistory(sessionId: string): Promise<HistoryResponse> {
+  const token = useAuthStore.getState().token;
+
+  const response = await fetch(
+    `${API_BASE}/chat/history?session_id=${encodeURIComponent(sessionId)}`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: token ? `Bearer ${token}` : "",
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  return response.json() as Promise<HistoryResponse>;
+}
