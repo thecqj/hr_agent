@@ -12,9 +12,6 @@ export function ChatBubble() {
     style,
     handlers,
     side,
-    top,
-    isDragging: bubbleIsDragging,
-    onBubbleMoveRef,
   } = useBubbleDrag();
 
   const chat = useChat();
@@ -37,18 +34,25 @@ export function ChatBubble() {
     e.stopPropagation();
     didDrag.current = false;
     pointerStartPos.current = { x: e.clientX, y: e.clientY };
-    handlers.onPointerDown(e);
+    // Only start drag when window is closed — open bubble is click-to-minimize only
+    if (!isOpen) {
+      handlers.onPointerDown(e);
+    }
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
     const dx = Math.abs(e.clientX - pointerStartPos.current.x);
     const dy = Math.abs(e.clientY - pointerStartPos.current.y);
     if (dx > 5 || dy > 5) didDrag.current = true;
-    handlers.onPointerMove(e);
+    if (!isOpen) {
+      handlers.onPointerMove(e);
+    }
   };
 
   const handlePointerUp = () => {
-    handlers.onPointerUp();
+    if (!isOpen) {
+      handlers.onPointerUp();
+    }
     // Toggle open/close on click (non-drag). We must do this in pointerUp
     // instead of onClick because setPointerCapture on the outer div causes
     // the browser click event to fire on the div, not the Button child.
@@ -64,8 +68,6 @@ export function ChatBubble() {
           onMinimize={() => setIsOpen(false)}
           onClose={chat.closeSession}
           bubbleSide={side}
-          bubbleTop={top}
-          onBubbleMoveRef={onBubbleMoveRef}
           chat={chat}
         />
       )}

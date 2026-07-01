@@ -57,9 +57,6 @@ export function useBubbleDrag() {
   const startOffset = useRef(0);
   const startTop = useRef(0);
 
-  // Callback for window position updates when bubble moves
-  const onBubbleMoveRef = useRef<((dx: number, dy: number) => void) | null>(null);
-
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     // Only respond to primary button on the bubble element itself
     if (e.button !== 0) return;
@@ -103,14 +100,6 @@ export function useBubbleDrag() {
     ));
 
     setPosition((prev) => ({ ...prev, offset: newOffset, top: newTop }));
-
-    // Notify window to follow
-    if (onBubbleMoveRef.current) {
-      onBubbleMoveRef.current(
-        newOffset - startOffset.current,
-        newTop - startTop.current,
-      );
-    }
   }, [position.side, isDragging]);
 
   const handlePointerUp = useCallback(() => {
@@ -165,15 +154,12 @@ export function useBubbleDrag() {
     side: position.side,
     top: position.top,
     isDragging,
-    onBubbleMoveRef,
   };
 }
 
-/** Hook for movable + resizable chat window, with bubble-follow support */
+/** Hook for movable + resizable chat window */
 export function useChatWindowDragResize(
   bubbleSide: "left" | "right",
-  bubbleTop: number,
-  onBubbleMoveRef: React.MutableRefObject<((dx: number, dy: number) => void) | null>,
 ) {
   const [state, setState] = useState<{ position: Position; size: Size }>(() => {
     const saved = loadJson<{ position: Position; size: Size } | null>("chat-window-state", null);
@@ -188,35 +174,10 @@ export function useChatWindowDragResize(
     return { position: defaultPos, size: defaultSize };
   });
 
-  // Track the offset between window and bubble for follow behavior
-  const windowBubbleOffset = useRef({ dx: 0, dy: 0 });
-
   // Persist to localStorage
   useEffect(() => {
     localStorage.setItem("chat-window-state", JSON.stringify(state));
   }, [state]);
-
-  // Register bubble-move callback so window follows when bubble is dragged
-  useEffect(() => {
-    onBubbleMoveRef.current = (dx: number, dy: number) => {
-      setState((prev) => {
-        const newX = prev.position.x + dx;
-        const newY = prev.position.y + dy;
-        const vw = window.innerWidth;
-        const vh = window.innerHeight;
-        return {
-          ...prev,
-          position: {
-            x: Math.max(0, Math.min(vw - prev.size.width, newX)),
-            y: Math.max(0, Math.min(vh - prev.size.height, newY)),
-          },
-        };
-      });
-    };
-    return () => {
-      onBubbleMoveRef.current = null;
-    };
-  }, [onBubbleMoveRef]);
 
   // --- Move logic (window header drag) ---
   const moveDragging = useRef(false);
@@ -228,10 +189,7 @@ export function useChatWindowDragResize(
     moveDragging.current = true;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     moveStart.current = { x: e.clientX - state.position.x, y: e.clientY - state.position.y };
-
-    // Track offset from bubble position
-    windowBubbleOffset.current = { dx: state.position.x, dy: state.position.y - bubbleTop };
-  }, [state.position, bubbleSide, bubbleTop]);
+  }, [state.position]);
 
   const handleMove = useCallback((e: React.PointerEvent) => {
     if (!moveDragging.current) return;
@@ -240,10 +198,7 @@ export function useChatWindowDragResize(
     const newX = Math.max(0, Math.min(vw - state.size.width, e.clientX - moveStart.current.x));
     const newY = Math.max(0, Math.min(vh - state.size.height, e.clientY - moveStart.current.y));
     setState((prev) => ({ ...prev, position: { x: newX, y: newY } }));
-
-    // Update offset for future bubble-follow
-    windowBubbleOffset.current = { dx: newX, dy: newY - bubbleTop };
-  }, [state.size, bubbleTop]);
+  }, [state.size]);
 
   const handleMoveEnd = useCallback(() => {
     moveDragging.current = false;

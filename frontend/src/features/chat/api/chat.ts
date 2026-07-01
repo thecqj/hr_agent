@@ -41,6 +41,7 @@ export function sendChatMessage(
 
       const decoder = new TextDecoder();
       let buffer = "";
+      let currentEvent = ""; // must persist across chunks — SSE event/data may span chunk boundaries
 
       while (true) {
         const { done, value } = await reader.read();
@@ -50,7 +51,6 @@ export function sendChatMessage(
         const lines = buffer.split("\n");
         buffer = lines.pop() || "";
 
-        let currentEvent = "";
         for (const line of lines) {
           if (line.startsWith("event: ")) {
             currentEvent = line.slice(7).trim();

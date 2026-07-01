@@ -19,8 +19,6 @@ interface ChatWindowProps {
   onMinimize: () => void;
   onClose: () => Promise<void>;
   bubbleSide: "left" | "right";
-  bubbleTop: number;
-  onBubbleMoveRef: React.MutableRefObject<((dx: number, dy: number) => void) | null>;
   chat: UseChatReturn;
 }
 
@@ -28,15 +26,11 @@ export function ChatWindow({
   onMinimize,
   onClose,
   bubbleSide,
-  bubbleTop,
-  onBubbleMoveRef,
   chat,
 }: ChatWindowProps) {
   const { messages, isProcessing, sendMessage } = chat;
   const { position, size, moveHandlers, resizeHandlers } = useChatWindowDragResize(
     bubbleSide,
-    bubbleTop,
-    onBubbleMoveRef,
   );
   const [showCloseDialog, setShowCloseDialog] = useState(false);
 
