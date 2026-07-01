@@ -267,6 +267,18 @@ class EvaluationTask(Base, TimestampMixin):          # table "evaluation_tasks"
     triggered_by_user: Mapped[User]
 ```
 
+#### `conversation.py` — 对话会话（Phase 2）
+
+```python
+class Conversation(Base, TimestampMixin):          # table "conversations"
+    user_id:           Mapped[uuid.UUID]   # FK → users.id, indexed
+    session_id:        Mapped[str]         # String(36), unique — equals LangGraph thread_id
+    summary:           Mapped[str | None]  # Text, LLM 生成的对话摘要
+    context_entities:  Mapped[Any | None]  # JSONB, 结构化上下文实体
+    is_active:         Mapped[bool]        # default=True; 关闭时设为 False
+    # 复合索引: ix_conversations_user_active on (user_id, is_active)
+```
+
 ---
 
 ### Pydantic 模式（`app/schemas/`）
@@ -326,7 +338,7 @@ class EvaluationTask(Base, TimestampMixin):          # table "evaluation_tasks"
 
 | 类名 | 关键字段 |
 |------|---------|
-| `ChatRequest` | `message: str (1-500)` |
+| `ChatRequest` | `message: str (1-500)`, `session_id?: str` |
 | `ThinkingEvent` | `status: str` |
 | `IntentEvent` | `intent: str`, `params: dict` |
 | `ProgressEvent` | `status: str`, `evaluated_count?: int`, `total_count?: int` |
@@ -339,6 +351,11 @@ class EvaluationTask(Base, TimestampMixin):          # table "evaluation_tasks"
 | `ConfirmCard` | `type="confirm"`, `action`, `params: dict` |
 | `ChatCard` | `EvaluationSummaryCard \| JobListCard \| JobDetailCard \| FunnelCard \| CandidateListCard \| ConfirmCard` |
 | `ResultEvent` | `reply_message: str`, `cards?: list[ChatCard]` |
+| `SessionCloseRequest` | `session_id: str` |
+| `SessionResponse` | `session_id: str`, `has_history: bool` |
+| `HistoryMessage` | `role: Literal["user","assistant"]`, `content: str`, `cards?: list[ChatCard]`, `timestamp: float` |
+| `HistoryResponse` | `session_id: str`, `messages: list[HistoryMessage]` |
+| `SessionEvent` | `session_id: str` |
 
 ---
 
@@ -391,8 +408,11 @@ class EvaluationTask(Base, TimestampMixin):          # table "evaluation_tasks"
 | 方法 | 路径 | 认证 | 处理器 | 说明 |
 |------|------|------|--------|------|
 | POST | `/send` | 必须 | `send_chat_message()` | 发送消息，返回 SSE 流式响应（`text/event-stream`） |
+| POST | `/session/close` | 必须 | `close_session()` | 关闭会话（is_active=False），触发摘要生成 |
+| GET | `/session` | 必须 | `get_session()` | 查询活跃会话（`?session_id=xxx`），返回 `{session_id, has_history}` |
+| GET | `/history` | 必须 | `get_chat_history()` | 获取对话历史消息（`?session_id=xxx`），从 LangGraph checkpoint 读取 chat_history |
 
-SSE 事件类型：`thinking`, `intent`, `progress`, `result`, `error`, `done`
+SSE 事件类型：`session`, `thinking`, `intent`, `progress`, `result`, `error`, `done`
 
 #### `deps.py` — 依赖注入
 
@@ -770,7 +790,10 @@ interface EvaluationDetail  { application_id, applicant_name, ai_score, ai_evalu
 |------|------|------|
 | `getEvaluationTask(taskId)` | GET | `/agent/task/{taskId}` |
 | `confirmEvaluation(taskId, decisions?)` | POST | `/agent/confirm/{taskId}` |
-| `sendChatMessage(message, onEvent, onError, onDone)` | POST | `/chat/send` (SSE) |
+| `sendChatMessage(message, sessionId, onEvent, onError, onDone)` | POST | `/chat/send` (SSE) |
+| `closeSession(sessionId)` | POST | `/chat/session/close` |
+| `getSession(sessionId?)` | GET | `/chat/session` |
+| `getHistory(sessionId)` | GET | `/chat/history` |
 
 #### 共享 HTTP 层（`shared/api/`）
 
@@ -847,8 +870,8 @@ interface BreadcrumbItem { label: string; href?: string }
 
 | 组件 | Props | 说明 |
 |------|-------|------|
-| `ChatBubble` | 无 | 浮动气泡入口（右下角，可拖拽吸附） |
-| `ChatWindow` | `onClose` | 对话窗口（header + messages + input，可拖拽移动+调整大小） |
+| `ChatBubble` | 无 | 浮动气泡入口（可自由拖拽，水平吸附边缘，窗口打开时禁止拖动） |
+| `ChatWindow` | `onMinimize, onClose, bubbleSide, chat` | 对话窗口（header 含最小化/关闭按钮 + 确认对话框，可拖拽移动+调整大小） |
 | `ChatMessages` | `messages: ChatMessage[], onSendMessage?` | 消息列表（自动滚动到底部），传递 onSendMessage 至 AssistantMessage |
 | `ChatInput` | `onSend, disabled` | 输入框 + 发送按钮 |
 | `AssistantMessage` | `message: ChatMessage, onSendMessage?` | 助手消息气泡；switch dispatch 渲染 6 种 ChatCard；ConfirmCard 通过 onSendMessage 回传"确认"/"取消" |
@@ -866,8 +889,8 @@ sendMessage prop chain：ChatWindow → ChatMessages → AssistantMessage → Co
 
 | Hook | 说明 |
 |------|------|
-| `useChat()` | 管理 messages/isProcessing/sendMessage/disconnect/clearMessages；消费 SSE 事件流更新消息 |
-| `useBubbleDrag()` | ChatBubble 水平拖拽 + 吸附到最近边缘（localStorage 持久化） |
+| `useChat()` | 管理 messages/isProcessing/sessionId；sendMessage 处理 SSE 事件流；closeSession 关闭并重置；validateSession 恢复历史消息 |
+| `useBubbleDrag()` | ChatBubble 自由拖拽（x+y）+ 水平吸附到最近边缘 + 垂直位置持久化（localStorage），含 NaN 防护 |
 | `useChatWindowDragResize(bubbleSide)` | ChatWindow 自由移动 + 可调整大小（localStorage 持久化） |
 
 #### 对话助手类型（`features/chat/types/chat.ts`）
@@ -887,6 +910,8 @@ interface FunnelStageData           { status, count, percentage }
 interface CandidateItemData         { name, ai_score?: number, ai_decision?: string, status }
 
 interface ProgressInfo { status, evaluated_count?, total_count? }
+
+interface SessionInfo { session_id: string, has_history: boolean }
 ```
 
 shadcn/ui 原子组件（`components/ui/`，18 个）：avatar, badge, breadcrumb, button, card, checkbox, dialog, dropdown-menu, form, input, label, pagination, select, separator, skeleton, table, tabs, textarea。
