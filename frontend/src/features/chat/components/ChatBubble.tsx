@@ -49,11 +49,10 @@ export function ChatBubble() {
 
   const handlePointerUp = () => {
     handlers.onPointerUp();
-  };
-
-  const handleClick = () => {
+    // Toggle open/close on click (non-drag). We must do this in pointerUp
+    // instead of onClick because setPointerCapture on the outer div causes
+    // the browser click event to fire on the div, not the Button child.
     if (!didDrag.current) {
-      // Toggle: if window is open → minimize; if closed → open
       setIsOpen((prev) => !prev);
     }
   };
@@ -80,7 +79,6 @@ export function ChatBubble() {
         <Button
           size="icon"
           className="h-12 w-12 rounded-full shadow-lg touch-none"
-          onClick={handleClick}
         >
           <MessageCircle className="h-6 w-6" />
         </Button>
