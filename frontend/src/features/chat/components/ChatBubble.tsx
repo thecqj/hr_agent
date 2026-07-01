@@ -66,7 +66,10 @@ export function ChatBubble() {
       {isOpen && (
         <ChatWindow
           onMinimize={() => setIsOpen(false)}
-          onClose={chat.closeSession}
+          onClose={async () => {
+            await chat.closeSession();
+            setIsOpen(false);
+          }}
           bubbleSide={side}
           chat={chat}
         />
