@@ -41,38 +41,6 @@ class BorderlineReview(BaseModel):
     reason: str = Field(..., description="调整理由")
 
 
-class IntentResult(BaseModel):
-    """意图识别结果"""
-
-    intent: Literal[
-        "evaluate",
-        "list_jobs",
-        "job_detail",
-        "pending_count",
-        "interview_count",
-        "candidate_eval",
-        "funnel",
-        "candidate_list",
-        "status_change",
-        "job_status",
-        "confirm",
-        "cancel",
-        "help",
-        "unknown",
-    ] = Field(
-        ..., description="识别出的意图类型"
-    )
-    confidence: float = Field(
-        ..., ge=0, le=1, description="置信度 0-1"
-    )
-    extracted_params: dict[str, Any] = Field(
-        default_factory=dict,
-        description="提取的参数（各意图对应不同参数键）",
-    )
-    clarifying_question: str | None = Field(
-        None, description="置信度低时的追问（仅 unknown 时）"
-    )
-
 
 # ── Agent API 请求/响应 Schema ──────────────────────────────
 

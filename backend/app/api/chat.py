@@ -3,7 +3,7 @@
 import json
 import uuid
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
@@ -29,7 +29,7 @@ async def send_chat_message(
 ) -> StreamingResponse:
     """发送消息，返回 SSE 流式响应。
 
-    事件类型：session, thinking, intent, progress, result, error, done
+    事件类型：session, tool_start, tool_end, text_delta, progress, result, error, done
     """
     if current_user.role != UserRole.RECRUITER:
         return StreamingResponse(
@@ -78,7 +78,7 @@ async def close_session(
 
         conversation.is_active = False
 
-        # Generate final summary if there's history in LangGraph Checkpoint
+        # Generate final summary from LangGraph checkpoint messages
         from app.services.conversation.graph import build_conversation_graph
 
         checkpointer = get_checkpointer()
@@ -88,31 +88,39 @@ async def close_session(
         }
         try:
             state_result = await graph.aget_state(config)
-            final_state: dict[str, Any] = state_result.values
+            messages = state_result.values.get("messages", [])
 
-            chat_history = final_state.get("chat_history")
             # Generate summary only for substantial conversations
-            if chat_history and len(chat_history) > 10:
+            if len(messages) > 10:
+                from app.llm.deepseek import DeepSeekProvider
+
                 provider = None
                 try:
-                    from app.llm.deepseek import DeepSeekProvider
                     provider = DeepSeekProvider()
-                    existing_summary = final_state.get("session_summary")
-                    summary = await provider.summarize_conversation(
-                        [{"role": t["role"], "content": t["content"]} for t in chat_history],
-                        existing_summary=existing_summary,
-                    )
-                    if len(summary) > 500:
-                        summary = summary[:500]
-                    conversation.summary = summary
+                    history_for_summary: list[dict[str, str]] = []
+                    for msg in messages:
+                        role = getattr(msg, "type", msg.get("type", ""))
+                        content = getattr(msg, "content", msg.get("content", ""))
+                        if role in ("user", "ai", "assistant", "human"):
+                            role_key = "user" if role in ("user", "human") else "assistant"
+                            history_for_summary.append({"role": role_key, "content": str(content)})
+
+                    if history_for_summary:
+                        summary = await provider.summarize_conversation(
+                            history_for_summary,
+                            existing_summary=conversation.summary,
+                        )
+                        if len(summary) > 500:
+                            summary = summary[:500]
+                        conversation.summary = summary
                 except Exception:
                     pass  # Summary failure is non-blocking
                 finally:
                     if provider is not None:
                         await provider.close()
 
-            # Always save context_entities
-            context_entities = final_state.get("context_entities")
+            # Update context_entities if present in state
+            context_entities = state_result.values.get("context_entities")
             if context_entities:
                 conversation.context_entities = context_entities
         except Exception:
@@ -169,7 +177,7 @@ async def get_chat_history(
     session_id: str = Query(..., description="会话 ID"),
     current_user: User = Depends(get_required_user),
 ) -> HistoryResponse:
-    """从 LangGraph checkpoint 读取 chat_history 并返回消息列表"""
+    """从 LangGraph checkpoint 读取消息列表"""
     # Verify the conversation belongs to the current user
     async with async_session() as db:
         stmt = select(Conversation).where(
@@ -182,7 +190,7 @@ async def get_chat_history(
     if not conversation:
         return HistoryResponse(session_id=session_id, messages=[])
 
-    # Load chat_history from LangGraph checkpoint
+    # Load messages from LangGraph checkpoint
     from app.services.conversation.graph import build_conversation_graph
 
     checkpointer = get_checkpointer()
@@ -191,28 +199,36 @@ async def get_chat_history(
 
     try:
         state_result = await graph.aget_state(config)
-        final_state: dict[str, Any] = state_result.values
-        chat_history = final_state.get("chat_history", [])
+        messages = state_result.values.get("messages", [])
     except Exception:
-        chat_history = []
+        messages = []
 
     from app.schemas.chat import HistoryMessage
 
-    messages: list[HistoryMessage] = []
-    for msg in chat_history:
-        if not isinstance(msg, dict) or "role" not in msg:
-            continue
-        role = msg["role"]
-        if role not in ("user", "assistant"):
-            continue
-        messages.append(HistoryMessage(
+    history_messages: list[HistoryMessage] = []
+    for msg in messages:
+        msg_type = getattr(msg, "type", msg.get("type", ""))
+        content = getattr(msg, "content", msg.get("content", ""))
+
+        # Map LangGraph message types to user/assistant
+        if msg_type in ("human", "user"):
+            role: Literal["user", "assistant"] = "user"
+        elif msg_type in ("ai", "assistant"):
+            # Skip AI messages that are pure tool calls (no visible content)
+            tool_calls = getattr(msg, "tool_calls", None)
+            if tool_calls and not content:
+                continue
+            role = "assistant"
+        else:
+            continue  # Skip system, tool messages
+
+        history_messages.append(HistoryMessage(
             role=role,
-            content=str(msg.get("content", "")),
-            cards=msg.get("cards") if role == "assistant" else None,
-            timestamp=float(msg.get("timestamp", 0)),
+            content=str(content),
+            timestamp=0.0,  # LangGraph messages don't carry timestamps
         ))
 
-    return HistoryResponse(session_id=session_id, messages=messages)
+    return HistoryResponse(session_id=session_id, messages=history_messages)
 
 
 async def _run_conversation_stream(
@@ -220,11 +236,10 @@ async def _run_conversation_stream(
     user_id: str,
     session_id: str,
 ) -> AsyncGenerator[str, None]:
-    """运行对话图并产出 SSE 事件流"""
+    """运行 ReAct Agent 并产出 SSE 事件流"""
     from app.services.conversation.graph import build_conversation_graph
 
     checkpointer = get_checkpointer()
-    graph = build_conversation_graph(checkpointer)
 
     # ── 会话索引管理 ──────────────────────────────────────
     async with async_session() as db:
@@ -235,7 +250,7 @@ async def _run_conversation_stream(
         result = await db.execute(stmt)
         conversation = result.scalar_one_or_none()
 
-        # Security: if conversation exists but belongs to another user, generate new session
+        # Security: if conversation exists but belongs to another user
         if conversation and conversation.user_id != uuid.UUID(user_id):
             session_id = str(uuid.uuid4())
             conversation = None
@@ -266,20 +281,12 @@ async def _run_conversation_stream(
             db.add(conversation)
             await db.commit()
 
-    # ── 构建 initial_state ────────────────────────────────
-    # If there's a seed summary/entities, inject them into initial state
-    seed_summary = conversation.summary if conversation else None
-    seed_entities = conversation.context_entities if conversation else None
-
-    initial_state: dict[str, Any] = {
-        "user_message": message,
-        "current_user_id": user_id,
-        "errors": [],
-    }
-    if seed_summary:
-        initial_state["session_summary"] = seed_summary
-    if seed_entities:
-        initial_state["context_entities"] = seed_entities
+    # ── Build context for state_modifier ────────────────────
+    context: dict[str, Any] = {}
+    if conversation.summary:
+        context["session_summary"] = conversation.summary
+    if conversation.context_entities:
+        context["context_entities"] = conversation.context_entities
 
     # ── Emit session event first ─────────────────────────
     yield f"event: session\ndata: {json.dumps({'session_id': session_id}, ensure_ascii=False)}\n\n"
@@ -293,32 +300,89 @@ async def _run_conversation_stream(
             }
         }
 
+        # Build graph with context injection
+        graph = build_conversation_graph(checkpointer, context=context)
+
+        # Input to the ReAct agent: a single HumanMessage
+        input_messages = {"messages": [("user", message)]}
+
         try:
             async for event in graph.astream_events(
-                initial_state, config=config, version="v2"
+                input_messages, config=config, version="v2"
             ):
-                if event.get("event") == "on_custom_event":
+                kind = event.get("event", "")
+
+                if kind == "on_chat_model_stream":
+                    chunk = event.get("data", {}).get("chunk")
+                    if chunk is None:
+                        continue
+                    # Tool call chunks — we skip, tool_start/tool_end handle this
+                    if hasattr(chunk, "tool_call_chunks") and chunk.tool_call_chunks:
+                        continue
+                    # Text content — emit as text_delta
+                    if chunk.content:
+                        # Normalize: content can be str or list[dict] (multimodal)
+                        if isinstance(chunk.content, str):
+                            text = chunk.content
+                        elif isinstance(chunk.content, list):
+                            text = "".join(
+                                part.get("text", "") if isinstance(part, dict) else str(part)
+                                for part in chunk.content
+                            )
+                        else:
+                            text = str(chunk.content)
+                        if text:
+                            yield f"event: text_delta\ndata: {json.dumps({'content': text}, ensure_ascii=False)}\n\n"
+
+                elif kind == "on_tool_start":
+                    tool_name = event.get("name", "unknown")
+                    yield f"event: tool_start\ndata: {json.dumps({'tool': tool_name}, ensure_ascii=False)}\n\n"
+
+                elif kind == "on_tool_end":
+                    tool_name = event.get("name", "unknown")
+                    yield f"event: tool_end\ndata: {json.dumps({'tool': tool_name}, ensure_ascii=False)}\n\n"
+
+                elif kind == "on_custom_event":
                     event_name = event.get("name", "")
                     event_data = event.get("data", {})
+                    if event_name == "progress":
+                        yield f"event: progress\ndata: {json.dumps(event_data, ensure_ascii=False)}\n\n"
 
-                    sse_event = _map_custom_event(event_name, event_data)
-                    if sse_event:
-                        yield sse_event
-
-            # 获取最终状态用于 result 事件
+            # Get final state for result event and context update
             state_result = await graph.aget_state(config)
-            final_state: dict[str, Any] = state_result.values
+            messages = state_result.values.get("messages", [])
 
-            if final_state.get("reply_message"):
-                result_data: dict[str, object] = {
-                    "reply_message": final_state["reply_message"],
-                }
-                if final_state.get("reply_cards"):
-                    result_data["cards"] = final_state["reply_cards"]
+            # The last AI message is the final reply
+            final_reply = ""
+            for msg in reversed(messages):
+                if hasattr(msg, "type") and msg.type == "ai":
+                    content = getattr(msg, "content", "")
+                    if content and not getattr(msg, "tool_calls", None):
+                        final_reply = content
+                        break
+                elif isinstance(msg, dict) and msg.get("type") == "ai":
+                    content = msg.get("content", "")
+                    if content and not msg.get("tool_calls"):
+                        final_reply = content
+                        break
 
-                yield f"event: result\ndata: {json.dumps(result_data, ensure_ascii=False)}\n\n"
+            if not final_reply:
+                # Fallback: get last AI message with text content (relax tool_calls constraint)
+                for msg in reversed(messages):
+                    msg_type = getattr(msg, "type", msg.get("type", ""))
+                    if msg_type not in ("ai", "assistant"):
+                        continue
+                    content = getattr(msg, "content", "") if hasattr(msg, "content") else msg.get("content", "")
+                    if content:
+                        final_reply = content
+                        break
 
-            # ── 更新 conversations 表的摘要/实体 ────────────
+            # Always emit result event — fallback message if no reply found
+            if not final_reply:
+                final_reply = "抱歉，我暂时无法回复，请重试。"
+            yield f"event: result\ndata: {json.dumps({'reply_message': final_reply}, ensure_ascii=False)}\n\n"
+
+            # ── Update conversations table ────────────────────
             if conversation:
                 async with async_session() as update_db:
                     update_stmt = select(Conversation).where(
@@ -327,10 +391,40 @@ async def _run_conversation_stream(
                     update_result = await update_db.execute(update_stmt)
                     conv = update_result.scalar_one_or_none()
                     if conv:
-                        if final_state.get("session_summary"):
-                            conv.summary = final_state["session_summary"]
-                        if final_state.get("context_entities"):
-                            conv.context_entities = final_state["context_entities"]
+                        # History compression: if too many messages, generate summary
+                        if len(messages) > 20:
+                            from app.llm.deepseek import DeepSeekProvider
+
+                            provider = None
+                            try:
+                                provider = DeepSeekProvider()
+                                history_for_summary: list[dict[str, str]] = []
+                                for msg in messages:
+                                    role = getattr(msg, "type", msg.get("type", ""))
+                                    content = getattr(msg, "content", msg.get("content", ""))
+                                    if role in ("user", "ai", "assistant", "human"):
+                                        role_key = "user" if role in ("user", "human") else "assistant"
+                                        history_for_summary.append({"role": role_key, "content": str(content)})
+
+                                if history_for_summary:
+                                    new_summary = await provider.summarize_conversation(
+                                        history_for_summary,
+                                        existing_summary=conv.summary,
+                                    )
+                                    if len(new_summary) > 500:
+                                        new_summary = new_summary[:500]
+                                    conv.summary = new_summary
+                            except Exception:
+                                pass
+                            finally:
+                                if provider is not None:
+                                    await provider.close()
+
+                        # Update context_entities from final state
+                        context_entities = state_result.values.get("context_entities")
+                        if context_entities:
+                            conv.context_entities = context_entities
+
                         await update_db.commit()
 
             yield "event: done\ndata: {}\n\n"
@@ -338,13 +432,6 @@ async def _run_conversation_stream(
         except Exception as exc:
             yield f"event: error\ndata: {json.dumps({'message': str(exc), 'recoverable': False}, ensure_ascii=False)}\n\n"
             yield "event: done\ndata: {}\n\n"
-
-
-def _map_custom_event(name: str, data: dict[str, object] | Any) -> str | None:
-    """将 LangGraph 自定义事件映射为 SSE 事件字符串"""
-    if name in ("thinking", "intent", "progress"):
-        return f"event: {name}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
-    return None
 
 
 async def _error_stream(message: str) -> AsyncGenerator[str, None]:

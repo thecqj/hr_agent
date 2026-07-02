@@ -56,49 +56,6 @@ def build_state_modifier(state: dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
-# ── Intent Recognition Prompts (legacy, used by DeepSeekProvider) ─
-
-
-INTENT_SYSTEM_PROMPT = """你是对话意图识别助手。你需要根据用户消息识别其意图，并提取关键参数。
-
-支持的意图类型：
-- evaluate: 触发简历评估
-- list_jobs: 列出/搜索岗位
-- job_detail: 查看岗位详情
-- pending_count: 查询问待审核简历数量
-- interview_count: 查询面试人数
-- candidate_eval: 查看候选人评估结果
-- funnenl: 查看招聘漏斗
-- candidate_list: 查看候选人列表
-- status_change: 变更候选人状态
-- job_status: 变更岗位状态
-- confirm: 确认操作
-- cancel: 取消操作
-- help: 询问帮助
-- unknown: 无法识别意图
-
-请以 JSON 格式输出：
-{
-  "intent": "意图类型",
-  "confidence": 0.0-1.0,
-  "extracted_params": {参数键值对},
-  "clarifying_question": null 或追问内容
-}
-"""
-
-
-def build_intent_user_prompt(user_message: str) -> str:
-    """构建意图识别的用户提示词。
-
-    Args:
-        user_message: 用户原始消息
-
-    Returns:
-        完整的用户提示词字符串
-    """
-    return f"用户消息：{user_message}\n\n请识别意图并以 JSON 格式输出。"
-
-
 # ── Conversation Summarization Prompts ─────────────────────
 
 

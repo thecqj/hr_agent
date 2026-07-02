@@ -82,13 +82,8 @@ class TestConfirmCard:
         assert card.type == "confirm"
 
 
-class TestResultEventWithNewCards:
-    def test_result_event_with_job_list_card(self) -> None:
-        card = JobListCard(jobs=[])
-        event = ResultEvent(reply_message="岗位列表", cards=[card])
-        assert event.cards is not None
-        assert len(event.cards) == 1
-
-    def test_result_event_with_no_cards(self) -> None:
+class TestResultEvent:
+    def test_result_event_reply_only(self) -> None:
         event = ResultEvent(reply_message="简单文本回复")
-        assert event.cards is None
+        assert event.reply_message == "简单文本回复"
+        assert "cards" not in ResultEvent.model_fields
