@@ -15,7 +15,6 @@ from app.database import async_session, get_checkpointer
 from app.models.conversation import Conversation
 from app.models.user import User, UserRole
 from app.schemas.chat import ChatRequest, SessionCloseRequest, SessionResponse, HistoryResponse
-from app.services.conversation.state import ConversationState
 
 router = APIRouter(prefix="/chat", tags=["对话助手"])
 
@@ -89,16 +88,15 @@ async def close_session(
         }
         try:
             state_result = await graph.aget_state(config)
-            final_state: ConversationState = state_result.values  # type: ignore[assignment]
+            final_state: dict[str, Any] = state_result.values
 
             chat_history = final_state.get("chat_history")
             # Generate summary only for substantial conversations
             if chat_history and len(chat_history) > 10:
-                from app.services.conversation.nodes import _get_llm_provider
-
                 provider = None
                 try:
-                    provider = _get_llm_provider()
+                    from app.llm.deepseek import DeepSeekProvider
+                    provider = DeepSeekProvider()
                     existing_summary = final_state.get("session_summary")
                     summary = await provider.summarize_conversation(
                         [{"role": t["role"], "content": t["content"]} for t in chat_history],
@@ -193,7 +191,7 @@ async def get_chat_history(
 
     try:
         state_result = await graph.aget_state(config)
-        final_state: ConversationState = state_result.values  # type: ignore[assignment]
+        final_state: dict[str, Any] = state_result.values
         chat_history = final_state.get("chat_history", [])
     except Exception:
         chat_history = []
@@ -273,7 +271,7 @@ async def _run_conversation_stream(
     seed_summary = conversation.summary if conversation else None
     seed_entities = conversation.context_entities if conversation else None
 
-    initial_state: ConversationState = {
+    initial_state: dict[str, Any] = {
         "user_message": message,
         "current_user_id": user_id,
         "errors": [],
@@ -291,6 +289,7 @@ async def _run_conversation_stream(
             "configurable": {
                 "thread_id": session_id,
                 "db": db,
+                "user_id": user_id,
             }
         }
 
@@ -308,7 +307,7 @@ async def _run_conversation_stream(
 
             # 获取最终状态用于 result 事件
             state_result = await graph.aget_state(config)
-            final_state: ConversationState = state_result.values  # type: ignore[assignment]
+            final_state: dict[str, Any] = state_result.values
 
             if final_state.get("reply_message"):
                 result_data: dict[str, object] = {

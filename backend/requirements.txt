@@ -26,6 +26,7 @@ httpx
 langgraph
 langchain-core
 langgraph-checkpoint-postgres
+langchain-openai
 
 # Testing
 pytest
