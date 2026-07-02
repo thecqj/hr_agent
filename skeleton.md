@@ -88,6 +88,7 @@ class Settings(BaseSettings):
     LLM_REQUESTS_PER_MINUTE: int        # 30
     LLM_EVALUATION_RETRIES: int         # 1
     LLM_BORDERLINE_RANGE: float         # 10.0
+    CHAT_MODEL: str                      # "deepseek-chat" — create_react_agent 使用的模型
 
 settings: Settings  # 模块级单例
 ```
@@ -333,17 +334,26 @@ class Conversation(Base, TimestampMixin):          # table "conversations"
 | `ConfirmRequest` | `decisions: list[ConfirmDecision]`（为空则按 AI 建议批量更新） |
 | `ConfirmResponse` | `updated_count: int`, `message: str` |
 
-#### `chat.py` — 对话助手 DTO（Phase 2）
+#### `chat.py` — 对话助手 DTO（Phase 2，ReAct 重构后）
 
 | 类名 | 关键字段 |
 |------|---------|
 | `ChatRequest` | `message: str (1-500)`, `session_id?: str` |
-| `ToolStartEvent` | `tool: str` |
-| `ToolEndEvent` | `tool: str` |
-| `TextDeltaEvent` | `content: str` |
+| `ThinkingEvent` | `status: str` — **DEPRECATED**: ReAct agent 无此阶段 |
+| `IntentEvent` | `intent: str`, `params: dict` — **DEPRECATED**: 不再有意图分类 |
+| `ToolStartEvent` | `tool: str` — Tool 开始执行 |
+| `ToolEndEvent` | `tool: str` — Tool 执行完毕 |
+| `TextDeltaEvent` | `content: str` — LLM 流式输出 token |
 | `ProgressEvent` | `status: str`, `evaluated_count?: int`, `total_count?: int` |
 | `ErrorEvent` | `message: str`, `recoverable: bool` |
 | `ResultEvent` | `reply_message: str` |
+| `EvaluationSummaryCard` | `type="evaluation_summary"`, `task_id`, `job_title`, `total_count`, `recommended_count`, `rejected_count`, `result_page_url` — 保留，ReAct agent 不再发送 |
+| `JobListCard` | `type="job_list"`, `jobs: list[dict]` — 保留，ReAct agent 不再发送 |
+| `JobDetailCard` | `type="job_detail"`, `job: dict` — 保留，ReAct agent 不再发送 |
+| `FunnelCard` | `type="funnel"`, `job_code`, `job_title`, `stages: list[FunnelStage]` — 保留，ReAct agent 不再发送 |
+| `CandidateListCard` | `type="candidate_list"`, `job_code`, `job_title`, `candidates: list[CandidateItem]` — 保留，ReAct agent 不再发送 |
+| `ConfirmCard` | `type="confirm"`, `action`, `params: dict` — 保留，ReAct agent 不再发送 |
+| `ChatCard` | 上述 6 种 Card 的 Union 类型 — 保留，ReAct agent 不再发送 |
 | `SessionCloseRequest` | `session_id: str` |
 | `SessionResponse` | `session_id: str`, `has_history: bool` |
 | `HistoryMessage` | `role: Literal["user","assistant"]`, `content: str`, `timestamp: float` |
@@ -541,13 +551,16 @@ graph.py      — 工作流图定义 & 运行
 ```
 __init__.py   — 模块入口，导出 build_conversation_graph, ConversationContext
 
-state.py      — ConversationContext(TypedDict): state_modifier 上下文
+state.py      — ConversationContext(TypedDict): state_modifier 上下文（create_react_agent 内部管理 messages，此模块仅定义 context injection 类型）
                 session_summary, context_entities
 
 prompts.py    — ReAct 对话 LLM 提示词
                 HR_AGENT_SYSTEM_PROMPT: ReAct Agent 系统提示（6 条核心原则 + 工具策略 + 回复格式）
                 build_state_modifier(state: dict) -> str
                   ↑ 动态注入 session_summary + context_entities
+                SUMMARIZE_SYSTEM_PROMPT: 对话摘要系统提示（JSON 输出，≤300 字）
+                build_summarize_user_prompt(history, existing_summary?) -> str
+                  ↑ 构建摘要用户提示（支持增量更新）
 
 tools.py      — ReAct Agent 7 个 Tool 定义
                 查询 Tool (3):
@@ -556,6 +569,7 @@ tools.py      — ReAct Agent 7 个 Tool 定义
                     ↑ fields: 白名单字段选择
                   query_applications(job_code?, job_title?, filter?, fields?, group_by?, sort_by?, sort_order?, limit=50) -> str
                     ↑ filter: status/ai_decision/candidate_name/min_ai_score/max_ai_score
+                    ↑ fields: candidate_name, ai_score, ai_decision, status, ai_evaluation, ai_decision_reason, resume_summary, cover_letter, structured_resume
                     ↑ group_by: ["status"] / ["ai_decision"] / ["status","ai_decision"]
                   query_evaluation(job_code?, task_id?) -> str
                 写操作 Tool (4):
@@ -571,7 +585,7 @@ tools.py      — ReAct Agent 7 个 Tool 定义
 
 graph.py      — ReAct Agent 图定义
                 build_conversation_graph(checkpointer, context?) -> CompiledStateGraph
-                  ↑ create_react_agent(model=ChatOpenAI, tools=ALL_TOOLS, state_modifier=...)
+                  ↑ create_react_agent(model=ChatOpenAI(settings.CHAT_MODEL), tools=ALL_TOOLS, prompt=state_modifier)
                 ALL_TOOLS: [query_jobs, query_applications, query_evaluation,
                             trigger_evaluation, confirm_evaluation,
                             update_candidate_status, update_job_status]
@@ -660,11 +674,14 @@ def decode_token(token: str) -> Dict[str, Any]
 | `test_auth_api.py` | 11 | 注册、登录、令牌刷新、me、登出 |
 | `test_jobs_api.py` | 15 | 岗位 CRUD、权限、筛选、申请计数、job_code 唯一性 |
 | `test_applications_api.py` | 10 | 投递、权限、状态更新、403 已拒绝重复投递 |
-| `test_agent_nodes.py` | 8 | LangGraph 节点单元测试（mock get_config, adispatch_custom_event） |
+| `test_application_service.py` | 8 | ApplicationService 查询方法（count_by_job_and_status, count_by_job_grouped_by_status, list_by_job） |
+| `test_job_service_resolve.py` | 6 | resolve_job 辅助函数（job_code/job_id/job_title 解析 + 消歧） |
+| `test_agent_nodes.py` | 8 | LangGraph 评估节点单元测试（mock get_config, adispatch_custom_event） |
 | `test_agent_service.py` | 8 | AgentService 单元测试（trigger/get_status/confirm） |
 | `test_agent_api.py` | 9 | Agent API 集成测试 |
-| `test_conversation_nodes.py` | 56 | 14 意图对话节点测试（7 查询 + 4 操作/确认 + feedback + confirm flow + route_by_pending_action）+ 6 种 ChatCard SSE 序列化 |
-| `test_chat_api.py` | 9 | Chat API 测试（认证、角色、验证、SSE 流） |
+| `test_react_tools.py` | 64 | ReAct Agent 7 个 Tool 单元测试（query_jobs/query_applications/query_evaluation + 4 写操作 + filter 安全 + 权限） |
+| `test_chat_api_v2.py` | 9 | Chat API 测试（认证、角色、验证、SSE 流 — ReAct 版本） |
+| `test_chat_schemas.py` | 6 | Chat Card Schema 序列化测试 |
 
 ---
 
@@ -848,33 +865,38 @@ interface BreadcrumbItem { label: string; href?: string }
 |------|-------|------|
 | `ChatBubble` | 无 | 浮动气泡入口（可自由拖拽，水平吸附边缘，窗口打开时禁止拖动） |
 | `ChatWindow` | `onMinimize, onClose, bubbleSide, chat` | 对话窗口（header 含最小化/关闭按钮 + 确认对话框，可拖拽移动+调整大小） |
-| `ChatMessages` | `messages: ChatMessage[], onSendMessage?` | 消息列表（自动滚动到底部），传递 onSendMessage 至 AssistantMessage |
+| `ChatMessages` | `messages: ChatMessage[]` | 消息列表（自动滚动到底部） |
 | `ChatInput` | `onSend, disabled` | 输入框 + 发送按钮 |
-| `AssistantMessage` | `message: ChatMessage, onSendMessage?` | 助手消息气泡；switch dispatch 渲染 6 种 ChatCard；ConfirmCard 通过 onSendMessage 回传"确认"/"取消" |
+| `AssistantMessage` | `message: ChatMessage` | 助手消息气泡；ReactMarkdown 渲染 Markdown；toolStatus 时显示 spinner；progress 时显示 ProgressMessage |
 | `ProgressMessage` | `progress: ProgressInfo` | 进度指示器（旋转 + 计数） |
-| `EvaluationCard` | `card: EvaluationSummaryCardData` | 可点击的评估摘要卡片（导航至结果页） |
-| `JobListCard` | `card: JobListCardData` | 岗位列表卡片（job_code/title/status/head_count） |
-| `JobDetailCard` | `card: JobDetailCardData` | 岗位详情卡片（可折叠：职责/要求/技能） |
-| `FunnelCard` | `card: FunnelCardData` | 招聘漏斗卡片（横向条形图，各阶段计数+百分比） |
-| `CandidateListCard` | `card: CandidateListCardData` | 候选人列表卡片（name/ai_score/ai_decision/status） |
-| `ConfirmCard` | `card: ConfirmCardData, onConfirm, onCancel` | 确认操作卡片（黄色边框 + 确认/取消按钮，回传"确认"/"取消"消息） |
+| `EvaluationCard` | `card: EvaluationSummaryCardData` | 可点击的评估摘要卡片（导航至结果页）— 保留组件，不再由对话流渲染 |
+| `JobListCard` | `card: JobListCardData` | 岗位列表卡片（job_code/title/status/head_count）— 保留组件，不再由对话流渲染 |
+| `JobDetailCard` | `card: JobDetailCardData` | 岗位详情卡片（可折叠：职责/要求/技能）— 保留组件，不再由对话流渲染 |
+| `FunnelCard` | `card: FunnelCardData` | 招聘漏斗卡片（横向条形图，各阶段计数+百分比）— 保留组件，不再由对话流渲染 |
+| `CandidateListCard` | `card: CandidateListCardData` | 候选人列表卡片（name/ai_score/ai_decision/status）— 保留组件，不再由对话流渲染 |
+| `ConfirmCard` | `card: ConfirmCardData, onConfirm, onCancel` | 确认操作卡片（黄色边框 + 确认/取消按钮）— 保留组件，不再由对话流渲染 |
 
-sendMessage prop chain：ChatWindow → ChatMessages → AssistantMessage → ConfirmCard
+sendMessage 流向：ChatWindow → ChatInput（通过 onSend）
+ReAct agent 回复使用 Markdown 渲染（react-markdown + remark-gfm），不再通过 Card 组件
 
 #### 对话助手 Hook（`features/chat/hooks/`）
 
 | Hook | 说明 |
 |------|------|
-| `useChat()` | 管理 messages/isProcessing/sessionId；sendMessage 处理 SSE 事件流；closeSession 关闭并重置；validateSession 恢复历史消息 |
+| `useChat()` | 管理 messages/isProcessing/sessionId；sendMessage 处理 SSE 事件流（tool_start/tool_end/text_delta/progress/result/error）；closeSession 关闭并重置；validateSession 恢复历史消息；返回 {messages, isProcessing, sessionId, sendMessage, disconnect, clearMessages, closeSession, validateSession} |
 | `useBubbleDrag()` | ChatBubble 自由拖拽（x+y）+ 水平吸附到最近边缘 + 垂直位置持久化（localStorage），含 NaN 防护 |
 | `useChatWindowDragResize(bubbleSide)` | ChatWindow 自由移动 + 可调整大小（localStorage 持久化） |
 
 #### 对话助手类型（`features/chat/types/chat.ts`）
 
 ```ts
-interface ChatMessage  { role: "user"|"assistant", content, cards?: ChatCard[], progress?: ProgressInfo, timestamp }
+// ── Tool Status ──
+interface ToolStatusInfo { tool: string; status: "started" | "ended" }
 
-// ChatCard — 6 种判别联合类型
+// ── Message ──
+interface ChatMessage  { role: "user"|"assistant", content, toolStatus?: ToolStatusInfo, progress?: ProgressInfo, timestamp }
+
+// ── Card Types (preserved for standalone card components, not used in chat flow) ──
 type ChatCard = EvaluationSummaryCardData | JobListCardData | JobDetailCardData | FunnelCardData | CandidateListCardData | ConfirmCardData
 interface EvaluationSummaryCardData { type: "evaluation_summary", task_id, job_title, total_count, recommended_count, rejected_count, result_page_url }
 interface JobListCardData           { type: "job_list", jobs: { job_code, title, status, head_count }[] }
@@ -889,6 +911,8 @@ interface ProgressInfo { status, evaluated_count?, total_count? }
 
 interface SessionInfo { session_id: string, has_history: boolean }
 ```
+
+前端依赖：`react-markdown@^10.1.0` + `remark-gfm@^4.0.1`（Markdown 渲染 ReAct agent 回复）
 
 shadcn/ui 原子组件（`components/ui/`，18 个）：avatar, badge, breadcrumb, button, card, checkbox, dialog, dropdown-menu, form, input, label, pagination, select, separator, skeleton, table, tabs, textarea。
 
