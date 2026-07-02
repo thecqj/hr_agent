@@ -105,7 +105,7 @@ export function ChatWindow({
         </div>
 
         {/* Messages */}
-        <ChatMessages messages={messages} onSendMessage={sendMessage} />
+        <ChatMessages messages={messages} />
 
         {/* Input */}
         <ChatInput onSend={sendMessage} disabled={isProcessing} />

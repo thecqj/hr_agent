@@ -63,7 +63,7 @@ def build_conversation_graph(
         model=chat_model,
         tools=ALL_TOOLS,
         checkpointer=checkpointer,
-        state_modifier=state_modifier,
+        prompt=state_modifier,
     )
 
     return graph

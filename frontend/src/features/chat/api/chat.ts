@@ -128,7 +128,6 @@ export async function getSession(sessionId?: string): Promise<SessionInfo> {
 export interface HistoryMessage {
   role: "user" | "assistant";
   content: string;
-  cards?: unknown[];
   timestamp: number;
 }
 
