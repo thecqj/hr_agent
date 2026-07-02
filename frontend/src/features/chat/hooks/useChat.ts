@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 
-import type { ChatMessage, ChatCard, ProgressInfo } from "@/features/chat/types/chat";
+import type { ChatMessage, ProgressInfo, ToolStatusInfo } from "@/features/chat/types/chat";
 import { sendChatMessage, closeSession as apiCloseSession, getSession, getHistory } from "@/features/chat/api/chat";
 
 const SESSION_STORAGE_KEY = "chat-session-id";
@@ -53,7 +53,7 @@ export function useChat() {
 
     // Track the current assistant message being built
     let assistantContent = "";
-    let assistantCards: ChatCard[] | undefined;
+    let assistantToolStatus: ToolStatusInfo | undefined;
     let assistantProgress: ProgressInfo | undefined;
 
     const controller = sendChatMessage(
@@ -62,38 +62,46 @@ export function useChat() {
       (eventType, data) => {
         switch (eventType) {
           case "session": {
-            // Server confirms/assigns session_id
             const newSessionId = data.session_id as string;
             setSessionId(newSessionId);
             saveSessionId(newSessionId);
             break;
           }
 
-          case "thinking":
-            assistantContent = (data.status as string) || "思考中...";
+          case "tool_start": {
+            const toolName = data.tool as string;
+            assistantToolStatus = { tool: toolName, status: "started" };
             setMessages((prev) => {
               const updated = [...prev];
               const lastIdx = updated.length - 1;
               if (lastIdx >= 0 && updated[lastIdx].role === "assistant") {
                 updated[lastIdx] = {
                   ...updated[lastIdx],
-                  content: assistantContent,
-                  progress: { status: assistantContent },
+                  content: assistantContent || `正在使用 ${toolName} 查询...`,
+                  toolStatus: assistantToolStatus,
                 };
               } else {
                 updated.push({
                   role: "assistant",
-                  content: assistantContent,
-                  progress: { status: assistantContent },
+                  content: `正在使用 ${toolName} 查询...`,
+                  toolStatus: assistantToolStatus,
                   timestamp: Date.now(),
                 });
               }
               return updated;
             });
             break;
+          }
 
-          case "intent":
-            assistantContent = "正在处理您的请求...";
+          case "tool_end": {
+            // Don't update UI on tool_end — wait for text_delta or result
+            break;
+          }
+
+          case "text_delta": {
+            const delta = data.content as string;
+            assistantContent += delta;
+            assistantToolStatus = undefined; // text output means tool is done
             setMessages((prev) => {
               const updated = [...prev];
               const lastIdx = updated.length - 1;
@@ -101,14 +109,22 @@ export function useChat() {
                 updated[lastIdx] = {
                   ...updated[lastIdx],
                   content: assistantContent,
-                  progress: { status: assistantContent },
+                  toolStatus: undefined,
+                  progress: undefined,
                 };
+              } else {
+                updated.push({
+                  role: "assistant",
+                  content: assistantContent,
+                  timestamp: Date.now(),
+                });
               }
               return updated;
             });
             break;
+          }
 
-          case "progress":
+          case "progress": {
             assistantProgress = {
               status: (data.status as string) || "处理中...",
               evaluated_count: data.evaluated_count as number | undefined,
@@ -127,10 +143,13 @@ export function useChat() {
               return updated;
             });
             break;
+          }
 
-          case "result":
-            assistantContent = (data.reply_message as string) || "";
-            assistantCards = data.cards as ChatCard[] | undefined;
+          case "result": {
+            const replyMessage = (data.reply_message as string) || "";
+            if (replyMessage) {
+              assistantContent = replyMessage;
+            }
             setMessages((prev) => {
               const updated = [...prev];
               const lastIdx = updated.length - 1;
@@ -138,16 +157,23 @@ export function useChat() {
                 updated[lastIdx] = {
                   ...updated[lastIdx],
                   content: assistantContent,
-                  cards: assistantCards,
+                  toolStatus: undefined,
                   progress: undefined,
                   timestamp: Date.now(),
                 };
+              } else {
+                updated.push({
+                  role: "assistant",
+                  content: assistantContent,
+                  timestamp: Date.now(),
+                });
               }
               return updated;
             });
             break;
+          }
 
-          case "error":
+          case "error": {
             assistantContent = `❌ ${(data.message as string) || "发生错误"}`;
             setMessages((prev) => {
               const updated = [...prev];
@@ -156,6 +182,7 @@ export function useChat() {
                 updated[lastIdx] = {
                   ...updated[lastIdx],
                   content: assistantContent,
+                  toolStatus: undefined,
                   progress: undefined,
                   timestamp: Date.now(),
                 };
@@ -163,6 +190,7 @@ export function useChat() {
               return updated;
             });
             break;
+          }
         }
       },
       (error) => {
@@ -172,7 +200,6 @@ export function useChat() {
           timestamp: Date.now(),
         };
         setMessages((prev) => {
-          // Remove any in-progress assistant message
           const filtered = prev.filter(
             (m) => !(m.role === "assistant" && m.progress)
           );
@@ -202,62 +229,51 @@ export function useChat() {
   }, []);
 
   const closeSession = useCallback(async () => {
-    // Abort any in-progress request
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
 
-    // Call backend to close the session (triggers summary generation)
     if (sessionId) {
       try {
         await apiCloseSession(sessionId);
       } catch {
-        // Non-blocking: session close failure doesn't prevent UI reset
+        // Non-blocking
       }
     }
 
-    // Clear frontend state
     setMessages([]);
     setIsProcessing(false);
 
-    // Generate new session_id for next conversation
     const newId = generateSessionId();
     setSessionId(newId);
     saveSessionId(newId);
   }, [sessionId]);
 
-  /**
-   * Check if the current session is still active (e.g., after page refresh).
-   * If not, generate a new session ID.
-   */
   const validateSession = useCallback(async () => {
     if (!sessionId) return;
     try {
       const info = await getSession(sessionId);
       if (info.has_history) {
-        // Session exists — restore messages from backend
         try {
           const history = await getHistory(sessionId);
           if (history.messages.length > 0) {
             setMessages(history.messages.map((m) => ({
               role: m.role,
               content: m.content,
-              cards: m.cards as ChatCard[] | undefined,
               timestamp: m.timestamp,
             })));
           }
         } catch {
-          // History fetch failed — user starts with empty view, can still send messages
+          // History fetch failed — start with empty view
         }
       } else {
-        // Session is no longer active or doesn't exist
         const newId = generateSessionId();
         setSessionId(newId);
         saveSessionId(newId);
       }
     } catch {
-      // On error, keep current session_id — will be validated on next message
+      // Keep current session_id
     }
   }, [sessionId]);
 

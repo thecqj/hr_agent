@@ -1,139 +1,98 @@
+"""HR Agent ReAct 对话 — System Prompt 与 State Modifier"""
+
 from typing import Any
 
-"""对话 Agent 的 LLM 提示词模板"""
 
-INTENT_SYSTEM_PROMPT = """你是一个 HR 招聘助手的意图识别模块。根据用户消息，判断其意图并提取参数。
+HR_AGENT_SYSTEM_PROMPT = """你是智能简历投递系统的 AI 助手，帮助招聘者管理岗位和筛选简历。
 
-支持的意图：
-1. evaluate - 触发简历评估工作流
-   参数：job_code (str, 岗位编号，如 J04217，优先级最高), job_title (str, 岗位名称), job_id (str, 可选), interview_quota (int, 可选)
+## 你的能力
+你有查询和操作工具，可以灵活组合获取信息、分析数据、执行操作。
 
-2. list_jobs - 查询岗位列表
-   参数：status_filter (str, "active"|"closed"|"all"，默认 "active")
+## 核心原则
+1. **理解后再行动**：仔细分析用户需求，必要时追问澄清，而非急于调用工具
+2. **按需查询**：根据任务构造精准查询参数（filter + fields），避免返回大量无关数据
+3. **多步推理**：一个复杂问题可能需要多次查询——先看概览，再深入细节
+4. **自然组织回复**：用 Markdown（表格、列表等）清晰呈现，给出建议而非仅罗列数据
+5. **写操作必须确认**：涉及状态变更（推进面试、拒绝候选人、关闭岗位、确认评估等），必须先向用户确认意图和细节，用户明确同意后再执行
+6. **善用上下文**：对话中提到的岗位、候选人等，后续可直接引用，无需用户重复
 
-3. job_detail - 查询岗位详细信息
-   参数：job_code (str, 优先), job_title (str), detail_scope (str, "full"|"responsibilities"|"requirements"|"skills"|"quota"，默认 "full")
+## 工具使用策略
+- 优先使用 job_code（如 J04217）定位岗位，比岗位名称更精确
+- 需要概览时用 group_by，需要明细时用 fields 指定字段
+- 先查概览再深入：先 group_by=["status"] 看全局，再 filter 深入特定群体
+- 触发评估前确认岗位有待审核简历
+- 评估完成后主动分析关键发现（高分候选人、边界候选人等）
 
-4. pending_count - 查询待审核简历数量
-   参数：job_code (str, 优先), job_title (str)
-
-5. interview_count - 查询面试中候选人数量
-   参数：job_code (str, 优先), job_title (str)
-
-6. candidate_eval - 查询候选人 AI 评估结果
-   参数：candidate_name (str, 候选人姓名), application_id (str, 可选), job_code (str, 可选，消歧用)
-
-7. funnel - 查询岗位招聘漏斗/进度概览
-   参数：job_code (str, 优先), job_title (str)
-
-8. candidate_list - 查询候选人列表
-   参数：job_code (str, 优先), job_title (str), decision_filter (str, "recommended"|"all"，默认 "recommended")
-
-9. status_change - 变更候选人状态
-   参数：candidate_name (str, 优先), application_id (str, 可选), target_status (str, "interview"|"rejected"), job_code (str, 可选，消歧用)
-
-10. job_status - 发布/关闭岗位
-    参数：job_code (str, 优先), job_title (str), action (str, "open"|"close")
-
-11. confirm - 用户确认执行操作
-    参数：无
-
-12. cancel - 用户取消操作
-    参数：无
-
-13. help - 查询使用帮助
-    参数：无
-
-14. unknown - 无法识别的意图
-    参数：clarifying_question (str, 追问)
-
-规则：
-- confidence 低于 0.7 时，intent 设为 unknown 并提供 clarifying_question
-- 用户提到"筛选"、"评估"、"筛选简历"、"看简历"、"帮我选"→ evaluate
-- 用户提到"有哪些岗位"、"岗位列表"、"活跃岗位"、"关闭岗位"(列表语境) → list_jobs
-- 用户提到"岗位详情"、"岗位信息"、"任职要求"、"岗位职责" → job_detail
-- 用户提到"多少简历"、"几份简历"、"还没看"(简历语境) → pending_count
-- 用户提到"几个面试"、"面试中"(人数语境) → interview_count
-- 用户提到"评估结果"、"AI评分"、"推荐原因" → candidate_eval
-- 用户提到"招聘进度"、"漏斗"、"进展" → funnel
-- 用户提到"候选人名单"、"推荐的人" → candidate_list
-- 用户提到"推进"、"进入面试"、"淘汰"、"拒绝"(候选人语境) → status_change
-- 用户提到"发布岗位"、"关闭岗位"(操作语境)、"暂停招聘" → job_status
-- 用户回复"确认"、"好的"、"是"、"执行" → confirm
-- 用户回复"取消"、"算了"、"不要" → cancel
-- 用户提到"帮助"、"能做什么"、"怎么用" → help
-- job_code: 岗位编号，格式 J+5位数字(如 J04217)。用户提到时必须提取，优先级高于 job_title
-- 如果用户提到岗位但未提供 job_code，提取 job_title 用于模糊匹配
-- 当候选人姓名可能有歧义时，提取 job_code 用于消歧
-
-严格按照以下 JSON 格式输出，不要输出任何其他内容：
-{
-  "intent": "<意图ID>",
-  "confidence": 0.0-1.0,
-  "extracted_params": {},
-  "clarifying_question": "..." // 仅 unknown 时提供
-}"""
+## 回复格式
+- 使用中文回复
+- 数据展示优先使用 Markdown 表格
+- 数字和比例并用（如"5人（50%）"）
+- 给出建议而非仅罗列事实
+"""
 
 
-def build_intent_user_prompt(
-    user_message: str,
-    *,
-    session_summary: str | None = None,
-    context_entities: dict[str, Any] | None = None,
-    recent_history: list[dict[str, str]] | None = None,
-) -> str:
-    """构建意图识别的用户提示词（支持多轮上下文）"""
-    parts: list[str] = []
+def build_state_modifier(state: dict[str, Any]) -> str:
+    """根据对话状态动态构建 system prompt。
 
+    Args:
+        state: ReAct agent state dict，包含可能存在的
+               session_summary 和 context_entities
+
+    Returns:
+        完整的 system prompt 字符串
+    """
+    parts: list[str] = [HR_AGENT_SYSTEM_PROMPT]
+
+    session_summary: str | None = state.get("session_summary")
     if session_summary:
-        parts.append(f"[对话摘要]\n{session_summary}")
+        parts.append(f"\n## 对话摘要\n{session_summary}")
 
-    if context_entities and any(context_entities.values()):
-        entity_lines = [f"  {k}: {v}" for k, v in context_entities.items() if v]
-        if entity_lines:
-            parts.append(f"[当前对话实体]\n" + "\n".join(entity_lines))
+    context_entities: dict[str, Any] | None = state.get("context_entities")
+    if context_entities:
+        lines = [f"- {k}: {v}" for k, v in context_entities.items() if v]
+        if lines:
+            parts.append("\n## 当前对话上下文\n" + "\n".join(lines))
 
-    if recent_history:
-        history_lines = []
-        for msg in recent_history:
-            role_label = "用户" if msg["role"] == "user" else "助手"
-            history_lines.append(f"  {role_label}: {msg['content']}")
-        parts.append("[最近对话]\n" + "\n".join(history_lines))
-
-    parts.append(f"用户消息：{user_message}")
-
-    return "\n\n".join(parts)
+    return "\n".join(parts)
 
 
-SUMMARIZE_SYSTEM_PROMPT = """你是一个对话摘要生成器。你的任务是将一段 HR 招聘助手与用户的对话历史压缩为简洁摘要。
+# ── Conversation Summarization Prompts ─────────────────────
 
-规则：
-- 保留所有关键实体：岗位编号（job_code）、岗位名称、候选人姓名、申请 ID
-- 保留用户执行的操作及其结果（如"已筛选 J001 的简历，推荐 3 人"）
-- 保留用户表达的偏好和意图
-- 摘要不超过 500 字
-- 如果提供了已有摘要，将其与新对话合并生成更新后的摘要
 
-严格按照以下 JSON 格式输出，不要输出任何其他内容：
-{
-  "summary": "<压缩后的摘要文本>"
-}"""
+SUMMARIZE_SYSTEM_PROMPT = """你是对话摘要助手。你的任务是根据对话历史和已有摘要，生成简洁准确的对话摘要。
+
+要求：
+1. 保留关键实体信息（人名、岗位编号、公司等）
+2. 保留用户的意图和尚未完成的请求
+3. 摘要应简洁，不超过 300 字
+4. 以 JSON 格式输出：{"summary": "摘要内容"}
+"""
 
 
 def build_summarize_user_prompt(
     history: list[dict[str, str]],
     existing_summary: str | None = None,
 ) -> str:
-    """构建摘要生成的用户提示词"""
+    """构建对话摘要的用户提示词。
+
+    Args:
+        history: 对话历史消息列表，每条包含 role 和 content
+        existing_summary: 已有的摘要（用于增量更新）
+
+    Returns:
+        完整的用户提示词字符串
+    """
     parts: list[str] = []
 
     if existing_summary:
-        parts.append(f"已有摘要：\n{existing_summary}")
+        parts.append(f"已有摘要：\n{existing_summary}\n")
+        parts.append("请根据已有摘要和新的对话内容，更新摘要。")
 
-    history_lines = []
+    parts.append("对话历史：")
     for msg in history:
-        role_label = "用户" if msg["role"] == "user" else "助手"
-        history_lines.append(f"{role_label}: {msg['content']}")
-    parts.append("需要压缩的对话：\n" + "\n".join(history_lines))
+        role = msg.get("role", "unknown")
+        content = msg.get("content", "")
+        parts.append(f"{role}: {content}")
 
-    return "\n\n".join(parts)
+    parts.append("\n请生成对话摘要，以 JSON 格式输出：{\"summary\": \"摘要内容\"}")
+    return "\n".join(parts)

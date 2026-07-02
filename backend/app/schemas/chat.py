@@ -20,13 +20,13 @@ class ChatRequest(BaseModel):
 
 
 class ThinkingEvent(BaseModel):
-    """thinking 事件"""
+    """thinking 事件 — DEPRECATED: ReAct agent 无此阶段"""
 
     status: str
 
 
 class IntentEvent(BaseModel):
-    """intent 事件"""
+    """intent 事件 — DEPRECATED: 不再有意图分类步骤"""
 
     intent: str
     params: dict[str, Any] = Field(default_factory=dict)
@@ -38,6 +38,24 @@ class ProgressEvent(BaseModel):
     status: str
     evaluated_count: int | None = None
     total_count: int | None = None
+
+
+class ToolStartEvent(BaseModel):
+    """tool_start 事件 — Tool 开始执行"""
+
+    tool: str = Field(..., description="Tool 名称")
+
+
+class ToolEndEvent(BaseModel):
+    """tool_end 事件 — Tool 执行完毕"""
+
+    tool: str = Field(..., description="Tool 名称")
+
+
+class TextDeltaEvent(BaseModel):
+    """text_delta 事件 — LLM 流式输出 token"""
+
+    content: str = Field(..., description="增量文本内容")
 
 
 class ErrorEvent(BaseModel):
@@ -138,7 +156,6 @@ class ResultEvent(BaseModel):
     """result 事件"""
 
     reply_message: str
-    cards: list[ChatCard] | None = None
 
 
 # ── 会话管理 Schema ─────────────────────────────────────────
@@ -162,7 +179,6 @@ class HistoryMessage(BaseModel):
 
     role: Literal["user", "assistant"] = Field(..., description="角色")
     content: str = Field("", description="消息内容")
-    cards: list[ChatCard] | None = Field(None, description="卡片列表（仅 assistant）")
     timestamp: float = Field(..., description="时间戳")
 
 

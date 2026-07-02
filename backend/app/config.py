@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     LLM_REQUESTS_PER_MINUTE: int = 30
     LLM_EVALUATION_RETRIES: int = 1
     LLM_BORDERLINE_RANGE: float = 10.0
+    CHAT_MODEL: str = "deepseek-chat"  # model used for create_react_agent tool_call
 
 
 settings = Settings()
