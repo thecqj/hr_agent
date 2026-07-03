@@ -46,7 +46,6 @@ async def create_job(db: AsyncSession, data: JobCreateRequest, current_user: Use
         location=data.location,
         work_type=data.work_type,
         skills_required=data.skills_required,
-        interview_quota=data.interview_quota,
         head_count=data.head_count,
         job_code=job_code,
         status=JobStatus.ACTIVE,

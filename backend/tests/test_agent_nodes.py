@@ -18,9 +18,10 @@ from app.schemas.agent import ResumeEvaluation, DimensionScore
 
 
 @pytest.fixture(autouse=True)
-def mock_get_config(mock_db: AsyncMock) -> MagicMock:
-    """Mock get_config() for all node tests — nodes get db from config now."""
-    with patch("app.services.agent.nodes.get_config", return_value={"configurable": {"db": mock_db}}) as m:
+def mock_async_session(mock_db: AsyncMock) -> MagicMock:
+    """Mock async_session() for all node tests — nodes get independent sessions."""
+    session_factory = MagicMock(return_value=mock_db)
+    with patch("app.database.async_session", session_factory) as m:
         yield m
 
 
@@ -33,8 +34,10 @@ def mock_adispatch() -> MagicMock:
 
 @pytest.fixture
 def mock_db() -> AsyncMock:
-    """Provide a shared mock db session for node tests."""
+    """Provide a shared mock db session that supports async with context manager."""
     db = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
     mock_task = MagicMock()
     db.get.return_value = mock_task
     return db
@@ -44,8 +47,8 @@ def mock_db() -> AsyncMock:
 
 
 @pytest.mark.asyncio
-async def test_screen_node_with_quota() -> None:
-    """有面试人数上限时，取 Top N"""
+async def test_screen_node_fixed_threshold() -> None:
+    """Fixed threshold 60: weighted_total >= 60 → recommend, < 60 → reject"""
     state: EvaluationState = {
         "evaluation_results": [
             {"application_id": "a1", "weighted_total": 90, "suggestion": "recommend"},
@@ -53,16 +56,16 @@ async def test_screen_node_with_quota() -> None:
             {"application_id": "a3", "weighted_total": 70, "suggestion": "neutral"},
             {"application_id": "a4", "weighted_total": 50, "suggestion": "reject"},
         ],
-        "job_info": {"interview_quota": 2},
+        "job_info": {},
     }
 
     result = await screen_node(state)
 
     screening = cast(dict[str, Any], result["screening_result"])
-    assert len(screening["recommend_list"]) == 2
-    assert len(screening["reject_list"]) == 2
+    assert len(screening["recommend_list"]) == 3
+    assert len(screening["reject_list"]) == 1
     assert screening["recommend_list"][0]["application_id"] == "a1"
-    assert screening["cutoff_score"] == 80
+    assert screening["cutoff_score"] == 60.0
 
 
 @pytest.mark.asyncio
@@ -73,7 +76,7 @@ async def test_screen_node_without_quota() -> None:
             {"application_id": "a1", "weighted_total": 85, "suggestion": "recommend"},
             {"application_id": "a2", "weighted_total": 55, "suggestion": "reject"},
         ],
-        "job_info": {"interview_quota": None},
+        "job_info": {},
     }
 
     result = await screen_node(state)
@@ -97,7 +100,7 @@ async def test_screen_node_empty_results() -> None:
     screening = cast(dict[str, Any], result["screening_result"])
     assert screening["recommend_list"] == []
     assert screening["reject_list"] == []
-    assert screening["cutoff_score"] == 0.0
+    assert screening["cutoff_score"] == 60.0
 
 
 # ── evaluate_node 测试（Mock LLM）────────────────────────────

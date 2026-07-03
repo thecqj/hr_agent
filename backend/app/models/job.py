@@ -48,7 +48,6 @@ class Job(Base, TimestampMixin):
     head_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=1
     )   # 最终招聘人数
-    interview_quota: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
     # 关联
     recruiter: Mapped["User"] = relationship("User", back_populates="jobs", foreign_keys=[recruiter_id])

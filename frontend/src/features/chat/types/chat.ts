@@ -1,4 +1,36 @@
-// ── 漏斗阶段 ─────────────────────────────────────────────
+// ── Tool Status ───────────────────────────────────────────
+
+export interface ToolStatusInfo {
+  tool: string;
+  status: "started" | "ended";
+}
+
+// ── Message ──────────────────────────────────────────────
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  /** Tool execution status (shows "正在查询..." during tool calls) */
+  toolStatus?: ToolStatusInfo;
+  /** Progress indicator for evaluation tasks */
+  progress?: ProgressInfo;
+  timestamp: number;
+}
+
+export interface ProgressInfo {
+  status: string;
+  evaluated_count?: number;
+  total_count?: number;
+}
+
+// ── Session Management ────────────────────────────────────
+
+export interface SessionInfo {
+  session_id: string;
+  has_history: boolean;
+}
+
+// ── Card Types (preserved for standalone card components, not used in chat flow) ──
 
 export interface FunnelStageData {
   status: string;
@@ -6,16 +38,12 @@ export interface FunnelStageData {
   percentage: number;
 }
 
-// ── 候选人条目 ─────────────────────────────────────────────
-
 export interface CandidateItemData {
   name: string;
   ai_score: number | null;
   ai_decision: string | null;
   status: string;
 }
-
-// ── 卡片类型 ─────────────────────────────────────────────
 
 export interface EvaluationSummaryCardData {
   type: "evaluation_summary";
@@ -50,7 +78,6 @@ export interface JobDetailCardData {
     location: string | null;
     work_type: string;
     head_count: number;
-    interview_quota: number;
     status: string;
   };
 }
@@ -75,8 +102,6 @@ export interface ConfirmCardData {
   params: Record<string, unknown>;
 }
 
-// ── 联合类型 ─────────────────────────────────────────────
-
 export type ChatCard =
   | EvaluationSummaryCardData
   | JobListCardData
@@ -84,19 +109,3 @@ export type ChatCard =
   | FunnelCardData
   | CandidateListCardData
   | ConfirmCardData;
-
-// ── 消息 & 进度 ─────────────────────────────────────────
-
-export interface ChatMessage {
-  role: "user" | "assistant";
-  content: string;
-  cards?: ChatCard[];
-  progress?: ProgressInfo;
-  timestamp: number;
-}
-
-export interface ProgressInfo {
-  status: string;
-  evaluated_count?: number;
-  total_count?: number;
-}

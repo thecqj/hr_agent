@@ -13,7 +13,6 @@ class EvaluationState(TypedDict, total=False):
     job_id: str
     triggered_by: str
     task_id: str
-    interview_quota_override: int | None  # Request-level override for interview quota
 
     # 收集阶段产出
     job_info: dict[str, object]  # 岗位信息

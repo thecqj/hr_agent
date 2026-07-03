@@ -88,6 +88,7 @@ class Settings(BaseSettings):
     LLM_REQUESTS_PER_MINUTE: int        # 30
     LLM_EVALUATION_RETRIES: int         # 1
     LLM_BORDERLINE_RANGE: float         # 10.0
+    CHAT_MODEL: str                      # "deepseek-chat" — create_react_agent 使用的模型
 
 settings: Settings  # 模块级单例
 ```
@@ -191,7 +192,7 @@ class Job(Base, TimestampMixin):           # table "jobs"
     status:            Mapped[JobStatus]   # default=ACTIVE
     job_code:          Mapped[str]         # String(6), unique, indexed; 格式 J10000~J99999
     head_count:        Mapped[int]         # 最终招聘人数, default=1
-    interview_quota:   Mapped[int]         # 面试人数上限, default=1
+    # interview_quota 已删除 — 筛选逻辑改为固定阈值 ai_score >= 60
     # 关系
     recruiter:    Mapped[User]              # back_populates="jobs"
     applications: Mapped[list[Application]]  # cascade delete-orphan
@@ -267,6 +268,18 @@ class EvaluationTask(Base, TimestampMixin):          # table "evaluation_tasks"
     triggered_by_user: Mapped[User]
 ```
 
+#### `conversation.py` — 对话会话（Phase 2）
+
+```python
+class Conversation(Base, TimestampMixin):          # table "conversations"
+    user_id:           Mapped[uuid.UUID]   # FK → users.id, indexed
+    session_id:        Mapped[str]         # String(36), unique — equals LangGraph thread_id
+    summary:           Mapped[str | None]  # Text, LLM 生成的对话摘要
+    # is_active 已删除 — 会话生命周期由 session_id 管理
+    # context_entities 已删除 — 死功能，无写入
+    # ix_conversations_user_active 索引已删除
+```
+
 ---
 
 ### Pydantic 模式（`app/schemas/`）
@@ -286,10 +299,10 @@ class EvaluationTask(Base, TimestampMixin):          # table "evaluation_tasks"
 
 | 类名 | 关键字段 |
 |------|---------|
-| `JobCreateRequest` | `title`, `description`, `requirements`, `salary_min/max`, `location`, `work_type`, `skills_required`, `head_count?`, `interview_quota` (required, default=1) |
-| `JobUpdateRequest` | 所有字段 Optional（部分更新，含 `requirements`, `interview_quota`, `head_count`） |
+| `JobCreateRequest` | `title`, `description`, `requirements`, `salary_min/max`, `location`, `work_type`, `skills_required`, `head_count?` |
+| `JobUpdateRequest` | 所有字段 Optional（部分更新，含 `requirements`, `head_count`） |
 | `JobStatusUpdateRequest` | `status: JobStatus` |
-| `JobResponse` | 全部字段 + `job_code`, `head_count`, `recruiter_name`, `applications_count`, `interview_quota`, `requirements`; `from_attributes=True` |
+| `JobResponse` | 全部字段 + `job_code`, `head_count`, `recruiter_name`, `applications_count`, `requirements`; `from_attributes=True` |
 | `JobListResponse` | `total`, `page`, `page_size`, `items: list[JobResponse]` |
 
 #### `application.py` — 投递 DTO
@@ -314,25 +327,38 @@ class EvaluationTask(Base, TimestampMixin):          # table "evaluation_tasks"
 | `DimensionScore` | `name: str`, `score: float (0-100)`, `weight: float (0-1)`, `reason: str` |
 | `ResumeEvaluation` | `dimensions: list[DimensionScore]`, `weighted_total: float`, `suggestion: Literal["recommend","reject","neutral"]`, `summary: str` |
 | `BorderlineReview` | `application_id: str`, `action: Literal["keep","adjust"]`, `new_decision?`, `reason: str` |
-| `EvaluateRequest` | `interview_quota?: int` |
+| `EvaluateRequest` | *(空 — 无参数)* |
 | `EvaluateResponse` | `task_id: str`, `status: str`, `total_count: int` |
 | `TaskStatusResponse` | `task_id`, `job_id`, `status: EvalTaskStatus`, `total_count`, `evaluated_count`, `result_summary?`, `error_message?`, `created_at`, `updated_at` |
 | `ConfirmDecision` | `application_id: str`, `final_decision: Literal["interview","reject"]`, `override_reason?` |
 | `ConfirmRequest` | `decisions: list[ConfirmDecision]`（为空则按 AI 建议批量更新） |
 | `ConfirmResponse` | `updated_count: int`, `message: str` |
-| `IntentResult` | `intent: Literal["evaluate","help","unknown"]`, `confidence: float (0-1)`, `extracted_params: dict`, `clarifying_question?: str` |
 
-#### `chat.py` — 对话助手 DTO（Phase 2）
+#### `chat.py` — 对话助手 DTO（Phase 2，ReAct 重构后）
 
 | 类名 | 关键字段 |
 |------|---------|
-| `ChatRequest` | `message: str (1-500)` |
-| `ThinkingEvent` | `status: str` |
-| `IntentEvent` | `intent: str`, `params: dict` |
+| `ChatRequest` | `message: str (1-500)`, `session_id?: str` |
+| `ThinkingEvent` | `status: str` — **DEPRECATED**: ReAct agent 无此阶段 |
+| `IntentEvent` | `intent: str`, `params: dict` — **DEPRECATED**: 不再有意图分类 |
+| `ToolStartEvent` | `tool: str` — Tool 开始执行 |
+| `ToolEndEvent` | `tool: str` — Tool 执行完毕 |
+| `TextDeltaEvent` | `content: str` — LLM 流式输出 token |
 | `ProgressEvent` | `status: str`, `evaluated_count?: int`, `total_count?: int` |
 | `ErrorEvent` | `message: str`, `recoverable: bool` |
-| `EvaluationSummaryCard` | `type="evaluation_summary"`, `task_id`, `job_title`, `total_count`, `recommended_count`, `rejected_count`, `result_page_url` |
-| `ResultEvent` | `reply_message: str`, `cards?: list[EvaluationSummaryCard]` |
+| `ResultEvent` | `reply_message: str` |
+| `EvaluationSummaryCard` | `type="evaluation_summary"`, `task_id`, `job_title`, `total_count`, `recommended_count`, `rejected_count`, `result_page_url` — 保留，ReAct agent 不再发送 |
+| `JobListCard` | `type="job_list"`, `jobs: list[dict]` — 保留，ReAct agent 不再发送 |
+| `JobDetailCard` | `type="job_detail"`, `job: dict` — 保留，ReAct agent 不再发送 |
+| `FunnelCard` | `type="funnel"`, `job_code`, `job_title`, `stages: list[FunnelStage]` — 保留，ReAct agent 不再发送 |
+| `CandidateListCard` | `type="candidate_list"`, `job_code`, `job_title`, `candidates: list[CandidateItem]` — 保留，ReAct agent 不再发送 |
+| `ConfirmCard` | `type="confirm"`, `action`, `params: dict` — 保留，ReAct agent 不再发送 |
+| `ChatCard` | 上述 6 种 Card 的 Union 类型 — 保留，ReAct agent 不再发送 |
+| `SessionCloseRequest` | `session_id: str` |
+| `SessionResponse` | `session_id: str`, `has_history: bool` |
+| `HistoryMessage` | `role: Literal["user","assistant"]`, `content: str`, `timestamp: float` |
+| `HistoryResponse` | `session_id: str`, `messages: list[HistoryMessage]` |
+| `SessionEvent` | `session_id: str` |
 
 ---
 
@@ -385,8 +411,11 @@ class EvaluationTask(Base, TimestampMixin):          # table "evaluation_tasks"
 | 方法 | 路径 | 认证 | 处理器 | 说明 |
 |------|------|------|--------|------|
 | POST | `/send` | 必须 | `send_chat_message()` | 发送消息，返回 SSE 流式响应（`text/event-stream`） |
+| POST | `/session/close` | 必须 | `close_session()` | 关闭会话（资源清理），不触发摘要生成 |
+| GET | `/session` | 必须 | `get_session()` | 查询会话（通过 session_id）（`?session_id=xxx`），返回 `{session_id, has_history}` |
+| GET | `/history` | 必须 | `get_chat_history()` | 获取对话历史消息（`?session_id=xxx`），从 LangGraph checkpoint 读取 chat_history |
 
-SSE 事件类型：`thinking`, `intent`, `progress`, `result`, `error`, `done`
+SSE 事件类型：session, tool_start, tool_end, text_delta, progress, result, error, done
 
 #### `deps.py` — 依赖注入
 
@@ -442,6 +471,9 @@ async def delete_job(db: AsyncSession, job_id: str, current_user: User) -> None
 
 async def update_job_status(db: AsyncSession, job_id: str, data: JobStatusUpdateRequest, current_user: User) -> Job
     """变更岗位状态；非拥有者→403。"""
+
+async def resolve_job(db: AsyncSession, job_code: str | None = None, job_id: str | None = None, job_title: str | None = None) -> Job | list[Job] | None
+    """岗位解析辅助：job_code（最高优先）> job_id > job_title 模糊匹配；多结果返回列表供消歧，无结果返回 None。"""
 ```
 
 #### `application_service.py`
@@ -459,6 +491,15 @@ async def get_my_applications(db, current_user, status_filter?, page?, page_size
 
 async def update_application_status(db, application_id, data, current_user) -> Application
     """招聘者更新投递状态；非拥有者→403。"""
+
+async def count_by_job_and_status(db: AsyncSession, job_id: str, status: str) -> int
+    """按岗位和状态统计投递数量；用于 pending_count / interview_count 节点。"""
+
+async def count_by_job_grouped_by_status(db: AsyncSession, job_id: str) -> dict[str, int]
+    """按岗位分组统计各状态投递数量；返回所有 ApplicationStatus 枚举值作为 key（无则为 0）；用于 funnel 节点。"""
+
+async def list_by_job(db: AsyncSession, job_id: str, decision_filter: str | None = None) -> list[Application]
+    """列出岗位的投递，可按 ai_decision 筛选，按 ai_score desc 排序；用于 candidate_list 节点。"""
 ```
 
 #### `agent_service.py`
@@ -481,7 +522,7 @@ state.py      — EvaluationState(TypedDict): 工作流状态定义
                 job_id, triggered_by, task_id (输入)
                 job_info, applications (收集阶段)
                 evaluation_results, evaluated_count (评估阶段)
-                screening_result (筛选阶段)
+                screening_result (筛选阶段 — 固定阈值 ai_score >= 60)
                 review_adjustments (复评阶段)
                 errors (错误累积)
 
@@ -495,7 +536,7 @@ prompts.py    — LLM 提示词模板
 nodes.py      — LangGraph 节点实现
                 collect_node(state)  -> dict   # 收集 pending 申请（db 从 get_config 获取）
                 evaluate_node(state) -> dict   # 逐份 LLM 评估，adispatch_custom_event 进度
-                screen_node(state)   -> dict   # 按 quota/60 分阈值筛选
+                screen_node(state)   -> dict   # 按固定阈值 60 分筛选
                 review_node(state)   -> dict   # LLM 复评边界候选人
                 save_draft_node(state) -> dict # 写入 ai_* 草稿字段，含 evaluation_details
 
@@ -505,32 +546,49 @@ graph.py      — 工作流图定义 & 运行
                 流程：collect → evaluate → screen → review → save_draft → END
 ```
 
-#### `conversation/` — LangGraph 对话助手（Phase 2）
+#### `conversation/` — LangGraph ReAct 对话助手（Phase 2 重构）
 
 ```
-__init__.py   — 模块入口，导出 build_conversation_graph
+__init__.py   — 模块入口，导出 build_conversation_graph, ConversationContext
 
-state.py      — ConversationState(TypedDict): 对话工作流状态
-                user_message, current_user_id (输入)
-                intent, extracted_params, clarifying_question (意图识别)
-                task_id, evaluation_status (工作流调用)
-                reply_message, reply_cards, result_page_url (反馈)
-                errors (错误)
+state.py      — ConversationContext(TypedDict): state_modifier 上下文（create_react_agent 内部管理 messages，此模块仅定义 context injection 类型）
+                session_summary
 
-prompts.py    — 对话 LLM 提示词
-                INTENT_SYSTEM_PROMPT: 意图识别系统提示（evaluate/help/unknown）
-                build_intent_user_prompt(user_message) -> str
+prompts.py    — ReAct 对话 LLM 提示词
+                HR_AGENT_SYSTEM_PROMPT: ReAct Agent 系统提示（6 条核心原则 + 工具策略 + 回复格式）
+                build_state_modifier(state: dict) -> str
+                  ↑ 动态注入 session_summary
+                SUMMARIZE_SYSTEM_PROMPT: 对话摘要系统提示（JSON 输出，≤300 字）
+                build_summarize_user_prompt(history, existing_summary?) -> str
+                  ↑ 构建摘要用户提示（支持增量更新）
 
-nodes.py      — 对话 LangGraph 节点
-                intent_node(state)    -> dict   # LLM 意图识别，失败回退 unknown
-                dispatch_node(state)  -> dict   # 岗位匹配 + 内联执行评估图 + 进度转发
-                feedback_node(state)  -> dict   # 格式化结果摘要 + 评估卡片
-                route_by_intent(state) -> str   # 条件路由：evaluate→dispatch, else→feedback
+tools.py      — ReAct Agent 7 个 Tool 定义
+                查询 Tool (3):
+                  query_jobs(filter?, fields?, limit=20) -> str
+                    ↑ filter: job_code/keyword/status/work_type/salary_min/salary_max
+                    ↑ fields: 白名单字段选择
+                  query_applications(job_code?, job_title?, filter?, fields?, group_by?, sort_by?, sort_order?, limit=50) -> str
+                    ↑ filter: status/ai_decision/candidate_name/min_ai_score/max_ai_score
+                    ↑ fields: candidate_name, ai_score, ai_decision, status, ai_evaluation, ai_decision_reason, resume_summary, cover_letter, structured_resume
+                    ↑ group_by: ["status"] / ["ai_decision"] / ["status","ai_decision"]
+                  query_evaluation(job_code?, task_id?) -> str
+                写操作 Tool (4):
+                  trigger_evaluation(job_code?, job_title?) -> str
+                    ↑ 内嵌运行评估图，进度通过 adispatch_custom_event 冒泡
+                  confirm_evaluation(task_id) -> str
+                    ↑ 按 AI 建议批量更新候选人状态
+                  update_candidate_status(job_code, candidate_name, target_status) -> str
+                    ↑ target_status: "interview" | "rejected"
+                  update_job_status(job_code, target_status) -> str
+                    ↑ target_status: "active" | "closed"
+                参数安全性: filter key 白名单 + value 校验 + 参数化查询 + 行级权限
 
-graph.py      — 对话图定义
-                build_conversation_graph(checkpointer) -> CompiledStateGraph
-                流程：START → intent → (evaluate? → dispatch → feedback → END)
-                                        (help/unknown? → feedback → END)
+graph.py      — ReAct Agent 图定义
+                build_conversation_graph(checkpointer, context?) -> CompiledStateGraph
+                  ↑ create_react_agent(model=ChatOpenAI(settings.CHAT_MODEL), tools=ALL_TOOLS, prompt=state_modifier)
+                ALL_TOOLS: [query_jobs, query_applications, query_evaluation,
+                            trigger_evaluation, confirm_evaluation,
+                            update_candidate_status, update_job_status]
 ```
 
 ---
@@ -546,7 +604,7 @@ class BaseLLMProvider(ABC):
     @abstractmethod
     async def review_borderline(self, job_info: dict, borderline_recommend: list[dict], borderline_reject: list[dict], cutoff_score: float) -> list[BorderlineReview]: ...
     @abstractmethod
-    async def recognize_intent(self, user_message: str) -> IntentResult: ...
+    async def summarize_conversation(self, history: list[dict[str, str]], existing_summary: str | None = None) -> str: ...
     @abstractmethod
     async def close(self) -> None: ...
 ```
@@ -558,7 +616,7 @@ class DeepSeekProvider(BaseLLMProvider):
     """基于 httpx.AsyncClient 调用 DeepSeek Chat API；支持 JSON response_format + 自动重试。"""
     async def evaluate_resume(...) -> ResumeEvaluation
     async def review_borderline(...) -> list[BorderlineReview]
-    async def recognize_intent(...) -> IntentResult   # Phase 2: 意图识别
+    async def summarize_conversation(self, history: list[dict[str, str]], existing_summary: str | None = None) -> str   # Phase 2: 对话摘要
     async def close() -> None  # 关闭 HTTP 客户端
 ```
 
@@ -603,6 +661,8 @@ def decode_token(token: str) -> Dict[str, Any]
 | `99186d2082a7_add_structured_resume_to_applications.py` | 为 applications 添加 structured_resume JSONB 列 |
 | `1ac3bbb5967e_add_hr_agent_evaluation_fields.py` | 新增 evaluation_tasks 表；为 applications 添加 ai_* 字段；为 jobs 添加 interview_quota |
 | `9d45e7aca4fb_add_requirements_to_jobs.py` | 为 jobs 添加 requirements Text 列（NOT NULL, default=""） |
+| `0da1a2fe2051_add_job_code_and_head_count_to_jobs.py` | 为 jobs 添加 job_code String(6) unique + head_count INT NOT NULL default=1；现有行随机回填 job_code |
+| `a1b2c3d4e5f6_remove_reviewed_status.py` | 移除 reviewed 状态；现有 reviewed 记录迁移为 interview |
 
 ---
 
@@ -612,14 +672,16 @@ def decode_token(token: str) -> Dict[str, Any]
 |------|--------|---------|
 | `conftest.py` | — | 提供 async engine / session / client / auth_headers 夹具 |
 | `test_auth_api.py` | 11 | 注册、登录、令牌刷新、me、登出 |
-| `test_jobs_api.py` | 12 | 岗位 CRUD、权限、筛选、申请计数 |
-| `test_applications_api.py` | 8 | 投递、权限、状态更新 |
-| `test_agent_nodes.py` | 8 | LangGraph 节点单元测试（mock get_config, adispatch_custom_event） |
+| `test_jobs_api.py` | 15 | 岗位 CRUD、权限、筛选、申请计数、job_code 唯一性 |
+| `test_applications_api.py` | 10 | 投递、权限、状态更新、403 已拒绝重复投递 |
+| `test_application_service.py` | 8 | ApplicationService 查询方法（count_by_job_and_status, count_by_job_grouped_by_status, list_by_job） |
+| `test_job_service_resolve.py` | 6 | resolve_job 辅助函数（job_code/job_id/job_title 解析 + 消歧） |
+| `test_agent_nodes.py` | 8 | LangGraph 评估节点单元测试（mock get_config, adispatch_custom_event） |
 | `test_agent_service.py` | 8 | AgentService 单元测试（trigger/get_status/confirm） |
 | `test_agent_api.py` | 9 | Agent API 集成测试 |
-| `test_intent_recognition.py` | 9 | IntentResult schema 验证 + DeepSeek recognize_intent mock 测试 |
-| `test_conversation_nodes.py` | 10 | 对话节点测试（intent/help/unknown/dispatch/feedback/route） |
-| `test_chat_api.py` | 4 | Chat API 测试（认证、角色、验证、SSE 流） |
+| `test_react_tools.py` | 64 | ReAct Agent 7 个 Tool 单元测试（query_jobs/query_applications/query_evaluation + 4 写操作 + filter 安全 + 权限） |
+| `test_chat_api_v2.py` | 9 | Chat API 测试（认证、角色、验证、SSE 流 — ReAct 版本） |
+| `test_chat_schemas.py` | 6 | Chat Card Schema 序列化测试 |
 
 ---
 
@@ -664,7 +726,7 @@ type JobStatus = "draft" | "active" | "closed"
 interface Job              { id, recruiter_id, title, description, requirements,
                              salary_min?, salary_max?,
                              location?, work_type, skills_required, status, created_at, updated_at,
-                             job_code, head_count, interview_quota,
+                             job_code, head_count,
                              recruiter_name?, applications_count? }
 interface PaginatedResponse<T> { total, page, page_size, items: T[] }
 interface JobListParams    { keyword?, work_type?, status?, page?, page_size? }
@@ -721,7 +783,10 @@ interface EvaluationDetail  { application_id, applicant_name, ai_score, ai_evalu
 |------|------|------|
 | `getEvaluationTask(taskId)` | GET | `/agent/task/{taskId}` |
 | `confirmEvaluation(taskId, decisions?)` | POST | `/agent/confirm/{taskId}` |
-| `sendChatMessage(message, onEvent, onError, onDone)` | POST | `/chat/send` (SSE) |
+| `sendChatMessage(message, sessionId, onEvent, onError, onDone)` | POST | `/chat/send` (SSE) |
+| `closeSession(sessionId)` | POST | `/chat/session/close` |
+| `getSession(sessionId?)` | GET | `/chat/session` |
+| `getHistory(sessionId)` | GET | `/chat/history` |
 
 #### 共享 HTTP 层（`shared/api/`）
 
@@ -798,29 +863,56 @@ interface BreadcrumbItem { label: string; href?: string }
 
 | 组件 | Props | 说明 |
 |------|-------|------|
-| `ChatBubble` | 无 | 浮动气泡入口（右下角） |
-| `ChatWindow` | `onClose` | 对话窗口（header + messages + input） |
+| `ChatBubble` | 无 | 浮动气泡入口（可自由拖拽，水平吸附边缘，窗口打开时禁止拖动） |
+| `ChatWindow` | `onMinimize, onClose, bubbleSide, chat` | 对话窗口（header 含最小化/关闭按钮 + 确认对话框，可拖拽移动+调整大小） |
 | `ChatMessages` | `messages: ChatMessage[]` | 消息列表（自动滚动到底部） |
 | `ChatInput` | `onSend, disabled` | 输入框 + 发送按钮 |
-| `AssistantMessage` | `message: ChatMessage` | 助手消息气泡（含进度/卡片） |
+| `AssistantMessage` | `message: ChatMessage` | 助手消息气泡；ReactMarkdown 渲染 Markdown；toolStatus 时显示 spinner；progress 时显示 ProgressMessage |
 | `ProgressMessage` | `progress: ProgressInfo` | 进度指示器（旋转 + 计数） |
-| `EvaluationCard` | `card: ChatCard` | 可点击的评估摘要卡片 |
+| `EvaluationCard` | `card: EvaluationSummaryCardData` | 可点击的评估摘要卡片（导航至结果页）— 保留组件，不再由对话流渲染 |
+| `JobListCard` | `card: JobListCardData` | 岗位列表卡片（job_code/title/status/head_count）— 保留组件，不再由对话流渲染 |
+| `JobDetailCard` | `card: JobDetailCardData` | 岗位详情卡片（可折叠：职责/要求/技能）— 保留组件，不再由对话流渲染 |
+| `FunnelCard` | `card: FunnelCardData` | 招聘漏斗卡片（横向条形图，各阶段计数+百分比）— 保留组件，不再由对话流渲染 |
+| `CandidateListCard` | `card: CandidateListCardData` | 候选人列表卡片（name/ai_score/ai_decision/status）— 保留组件，不再由对话流渲染 |
+| `ConfirmCard` | `card: ConfirmCardData, onConfirm, onCancel` | 确认操作卡片（黄色边框 + 确认/取消按钮）— 保留组件，不再由对话流渲染 |
+
+sendMessage 流向：ChatWindow → ChatInput（通过 onSend）
+ReAct agent 回复使用 Markdown 渲染（react-markdown + remark-gfm），不再通过 Card 组件
 
 #### 对话助手 Hook（`features/chat/hooks/`）
 
 | Hook | 说明 |
 |------|------|
-| `useChat()` | 管理 messages/isProcessing/sendMessage/disconnect/clearMessages；消费 SSE 事件流更新消息 |
-| `useBubbleDrag()` | ChatBubble 水平拖拽 + 吸附到最近边缘（localStorage 持久化） |
+| `useChat()` | 管理 messages/isProcessing/sessionId；sendMessage 处理 SSE 事件流（tool_start/tool_end/text_delta/progress/result/error）；closeSession 关闭并重置；validateSession 恢复历史消息；返回 {messages, isProcessing, sessionId, sendMessage, disconnect, clearMessages, closeSession, validateSession} |
+| `useBubbleDrag()` | ChatBubble 自由拖拽（x+y）+ 水平吸附到最近边缘 + 垂直位置持久化（localStorage），含 NaN 防护 |
 | `useChatWindowDragResize(bubbleSide)` | ChatWindow 自由移动 + 可调整大小（localStorage 持久化） |
 
 #### 对话助手类型（`features/chat/types/chat.ts`）
 
 ```ts
-interface ChatMessage  { role: "user"|"assistant", content, cards?: ChatCard[], progress?: ProgressInfo, timestamp }
-interface ChatCard     { type: "evaluation_summary", task_id, job_title, total_count, recommended_count, rejected_count, result_page_url }
+// ── Tool Status ──
+interface ToolStatusInfo { tool: string; status: "started" | "ended" }
+
+// ── Message ──
+interface ChatMessage  { role: "user"|"assistant", content, toolStatus?: ToolStatusInfo, progress?: ProgressInfo, timestamp }
+
+// ── Card Types (preserved for standalone card components, not used in chat flow) ──
+type ChatCard = EvaluationSummaryCardData | JobListCardData | JobDetailCardData | FunnelCardData | CandidateListCardData | ConfirmCardData
+interface EvaluationSummaryCardData { type: "evaluation_summary", task_id, job_title, total_count, recommended_count, rejected_count, result_page_url }
+interface JobListCardData           { type: "job_list", jobs: { job_code, title, status, head_count }[] }
+interface JobDetailCardData         { type: "job_detail", job: { job_code, title, description, requirements, skills_required, salary_min?, salary_max?, location?, work_type, head_count, status } }
+interface FunnelCardData            { type: "funnel", job_code, job_title, stages: FunnelStageData[] }
+interface CandidateListCardData     { type: "candidate_list", job_code, job_title, candidates: CandidateItemData[] }
+interface ConfirmCardData           { type: "confirm", action, params: Record<string, unknown> }
+interface FunnelStageData           { status, count, percentage }
+interface CandidateItemData         { name, ai_score?: number, ai_decision?: string, status }
+
 interface ProgressInfo { status, evaluated_count?, total_count? }
+
+interface SessionInfo { session_id: string, has_history: boolean }
 ```
+
+前端依赖：`react-markdown@^10.1.0` + `remark-gfm@^4.0.1`（Markdown 渲染 ReAct agent 回复）
 
 shadcn/ui 原子组件（`components/ui/`，18 个）：avatar, badge, breadcrumb, button, card, checkbox, dialog, dropdown-menu, form, input, label, pagination, select, separator, skeleton, table, tabs, textarea。
 

@@ -11,19 +11,22 @@ class ChatRequest(BaseModel):
     message: str = Field(
         ..., min_length=1, max_length=500, description="用户消息"
     )
+    session_id: str | None = Field(
+        None, description="会话 ID，首次可为空"
+    )
 
 
 # ── SSE 事件 Schema ─────────────────────────────────────────
 
 
 class ThinkingEvent(BaseModel):
-    """thinking 事件"""
+    """thinking 事件 — DEPRECATED: ReAct agent 无此阶段"""
 
     status: str
 
 
 class IntentEvent(BaseModel):
-    """intent 事件"""
+    """intent 事件 — DEPRECATED: 不再有意图分类步骤"""
 
     intent: str
     params: dict[str, Any] = Field(default_factory=dict)
@@ -35,6 +38,24 @@ class ProgressEvent(BaseModel):
     status: str
     evaluated_count: int | None = None
     total_count: int | None = None
+
+
+class ToolStartEvent(BaseModel):
+    """tool_start 事件 — Tool 开始执行"""
+
+    tool: str = Field(..., description="Tool 名称")
+
+
+class ToolEndEvent(BaseModel):
+    """tool_end 事件 — Tool 执行完毕"""
+
+    tool: str = Field(..., description="Tool 名称")
+
+
+class TextDeltaEvent(BaseModel):
+    """text_delta 事件 — LLM 流式输出 token"""
+
+    content: str = Field(..., description="增量文本内容")
 
 
 class ErrorEvent(BaseModel):
@@ -135,4 +156,40 @@ class ResultEvent(BaseModel):
     """result 事件"""
 
     reply_message: str
-    cards: list[ChatCard] | None = None
+
+
+# ── 会话管理 Schema ─────────────────────────────────────────
+
+
+class SessionCloseRequest(BaseModel):
+    """关闭会话请求"""
+
+    session_id: str = Field(..., description="要关闭的会话 ID")
+
+
+class SessionResponse(BaseModel):
+    """会话查询响应"""
+
+    session_id: str = Field(..., description="会话 ID")
+    has_history: bool = Field(..., description="是否存在历史对话")
+
+
+class HistoryMessage(BaseModel):
+    """历史消息条目"""
+
+    role: Literal["user", "assistant"] = Field(..., description="角色")
+    content: str = Field("", description="消息内容")
+    timestamp: float = Field(..., description="时间戳")
+
+
+class HistoryResponse(BaseModel):
+    """对话历史响应"""
+
+    session_id: str = Field(..., description="会话 ID")
+    messages: list[HistoryMessage] = Field(default_factory=list, description="消息列表")
+
+
+class SessionEvent(BaseModel):
+    """SSE session 事件"""
+
+    session_id: str = Field(..., description="会话 ID")

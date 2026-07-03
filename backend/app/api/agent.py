@@ -24,7 +24,7 @@ router = APIRouter(prefix="/agent", tags=["智能评估"])
 )
 async def trigger_evaluation(
     job_id: str = Path(..., description="岗位ID"),
-    data: EvaluateRequest = EvaluateRequest(interview_quota=None),
+    data: EvaluateRequest = EvaluateRequest(),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_required_user),
 ) -> EvaluateResponse:

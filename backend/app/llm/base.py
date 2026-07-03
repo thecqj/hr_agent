@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from app.schemas.agent import BorderlineReview, IntentResult, ResumeEvaluation
+from app.schemas.agent import BorderlineReview, ResumeEvaluation
 
 
 class BaseLLMProvider(ABC):
@@ -28,11 +28,20 @@ class BaseLLMProvider(ABC):
         ...
 
     @abstractmethod
-    async def recognize_intent(
+    async def summarize_conversation(
         self,
-        user_message: str,
-    ) -> IntentResult:
-        """识别用户消息的意图和参数"""
+        history: list[dict[str, str]],
+        existing_summary: str | None = None,
+    ) -> str:
+        """生成对话摘要
+
+        Args:
+            history: 需要压缩的对话轮次 [{role, content}]
+            existing_summary: 已有摘要（合并更新）
+
+        Returns:
+            压缩后的摘要文本
+        """
         ...
 
     @abstractmethod

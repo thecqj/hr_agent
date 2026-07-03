@@ -1,4 +1,5 @@
 import { useAuthStore } from "@/features/auth/store/authStore";
+import type { SessionInfo } from "@/features/chat/types/chat";
 
 const API_BASE = "/api";
 
@@ -9,6 +10,7 @@ const API_BASE = "/api";
  */
 export function sendChatMessage(
   message: string,
+  sessionId: string | null,
   onEvent: (eventType: string, data: Record<string, unknown>) => void,
   onError: (error: Error) => void,
   onDone: () => void,
@@ -22,7 +24,7 @@ export function sendChatMessage(
       "Content-Type": "application/json",
       Authorization: token ? `Bearer ${token}` : "",
     },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, session_id: sessionId }),
     signal: controller.signal,
   })
     .then(async (response) => {
@@ -39,6 +41,7 @@ export function sendChatMessage(
 
       const decoder = new TextDecoder();
       let buffer = "";
+      let currentEvent = ""; // must persist across chunks — SSE event/data may span chunk boundaries
 
       while (true) {
         const { done, value } = await reader.read();
@@ -48,7 +51,6 @@ export function sendChatMessage(
         const lines = buffer.split("\n");
         buffer = lines.pop() || "";
 
-        let currentEvent = "";
         for (const line of lines) {
           if (line.startsWith("event: ")) {
             currentEvent = line.slice(7).trim();
@@ -78,4 +80,81 @@ export function sendChatMessage(
     });
 
   return controller;
+}
+
+/**
+ * Close a chat session — marks it as inactive and triggers summary generation.
+ */
+export async function closeSession(sessionId: string): Promise<void> {
+  const token = useAuthStore.getState().token;
+
+  const response = await fetch(`${API_BASE}/chat/session/close`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: token ? `Bearer ${token}` : "",
+    },
+    body: JSON.stringify({ session_id: sessionId }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+}
+
+/**
+ * Query the current active session for the user.
+ * If session_id is provided, checks that specific session's status.
+ * Otherwise, returns the most recent active session.
+ */
+export async function getSession(sessionId?: string): Promise<SessionInfo> {
+  const token = useAuthStore.getState().token;
+  const params = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : "";
+
+  const response = await fetch(`${API_BASE}/chat/session${params}`, {
+    method: "GET",
+    headers: {
+      Authorization: token ? `Bearer ${token}` : "",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  return response.json() as Promise<SessionInfo>;
+}
+
+export interface HistoryMessage {
+  role: "user" | "assistant";
+  content: string;
+  timestamp: number;
+}
+
+export interface HistoryResponse {
+  session_id: string;
+  messages: HistoryMessage[];
+}
+
+/**
+ * Fetch chat history for a given session (messages stored in LangGraph checkpoint).
+ */
+export async function getHistory(sessionId: string): Promise<HistoryResponse> {
+  const token = useAuthStore.getState().token;
+
+  const response = await fetch(
+    `${API_BASE}/chat/history?session_id=${encodeURIComponent(sessionId)}`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: token ? `Bearer ${token}` : "",
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  return response.json() as Promise<HistoryResponse>;
 }

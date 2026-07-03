@@ -89,11 +89,9 @@ async def trigger_evaluation(
     await db.refresh(eval_task)
 
     # 启动后台工作流
-    interview_quota_override = getattr(request, "interview_quota", None)
     asyncio.create_task(
         _run_workflow_background(
             str(task_id), str(job_id), str(current_user.id),
-            interview_quota_override=interview_quota_override,
         )
     )
 
@@ -108,7 +106,6 @@ async def _run_workflow_background(
     task_id: str,
     job_id: str,
     triggered_by: str,
-    interview_quota_override: int | None = None,
 ) -> None:
     """后台执行评估工作流（通过 LangGraph 图引擎）"""
     from app.database import async_session
@@ -121,7 +118,6 @@ async def _run_workflow_background(
                 "triggered_by": triggered_by,
                 "task_id": task_id,
                 "errors": [],
-                "interview_quota_override": interview_quota_override,
             }
             await run_evaluation_workflow(initial_state, db)
         except Exception as exc:

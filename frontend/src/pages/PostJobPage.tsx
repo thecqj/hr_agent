@@ -37,7 +37,6 @@ const jobSchema = z.object({
   work_type: z.enum(["remote", "onsite", "hybrid"]).optional(),
   salary_min: z.number({ message: "请输入数字" }).optional(),
   salary_max: z.number({ message: "请输入数字" }).optional(),
-  interview_quota: z.number({ message: "请输入数字" }).min(1, "至少为1"),
   head_count: z.number({ message: "请输入数字" }).min(1, "至少为1"),
 });
 
@@ -67,7 +66,6 @@ export default function PostJobPage() {
     defaultValues: {
       work_type: "onsite",
       requirements: "",
-      interview_quota: 1,
       head_count: 1,
     },
   });
@@ -198,39 +196,21 @@ export default function PostJobPage() {
                 )}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="interview_quota">
-                  进面人数 <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  id="interview_quota"
-                  type="number"
-                  {...register("interview_quota", { valueAsNumber: true })}
-                  className="mt-1.5"
-                  placeholder="例如：5"
-                  min={1}
-                />
-                {formState.errors.interview_quota && (
-                  <p className="text-sm text-destructive mt-1">{formState.errors.interview_quota.message}</p>
-                )}
-              </div>
-              <div>
-                <Label htmlFor="head_count">
-                  招聘人数 <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  id="head_count"
-                  type="number"
-                  {...register("head_count", { valueAsNumber: true })}
-                  className="mt-1.5"
-                  placeholder="例如：2"
-                  min={1}
-                />
-                {formState.errors.head_count && (
-                  <p className="text-sm text-destructive mt-1">{formState.errors.head_count.message}</p>
-                )}
-              </div>
+            <div>
+              <Label htmlFor="head_count">
+                招聘人数 <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="head_count"
+                type="number"
+                {...register("head_count", { valueAsNumber: true })}
+                className="mt-1.5"
+                placeholder="例如：2"
+                min={1}
+              />
+              {formState.errors.head_count && (
+                <p className="text-sm text-destructive mt-1">{formState.errors.head_count.message}</p>
+              )}
             </div>
           </CardContent>
         </Card>

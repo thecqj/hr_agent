@@ -12,6 +12,7 @@ from app.models.base import Base
 
 # 导入所有模型，确保 metadata 完整注册
 import app.models.application  # noqa: F401
+import app.models.conversation  # noqa: F401
 import app.models.job  # noqa: F401
 import app.models.recruiter_profile  # noqa: F401
 import app.models.seeker_profile  # noqa: F401

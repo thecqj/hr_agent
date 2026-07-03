@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from langchain_core.callbacks import adispatch_custom_event
-from langgraph.config import get_config
 
 from app.config import settings
 from app.llm.base import BaseLLMProvider
@@ -30,15 +29,17 @@ def _get_llm_provider() -> BaseLLMProvider:
 
 
 def _get_db() -> AsyncSession:
-    """从 LangGraph config 获取数据库会话"""
-    config = get_config()
-    db: AsyncSession = config["configurable"]["db"]
-    return db
+    """创建独立的短生命周期数据库会话。
+
+    每次 node 调用使用独立的 session，避免与其他
+    并发操作共享同一个 AsyncSession 导致 isce 错误。
+    """
+    from app.database import async_session
+    return async_session()
 
 
 async def collect_node(state: EvaluationState) -> dict[str, Any]:
     """收集阶段：获取岗位下所有 pending 申请"""
-    db = _get_db()
     job_id = state.get("job_id", "")
     task_id = state.get("task_id", "")
 
@@ -46,70 +47,70 @@ async def collect_node(state: EvaluationState) -> dict[str, Any]:
 
     await adispatch_custom_event("progress", {"status": "正在收集简历..."})
 
-    # 更新任务状态为 running
-    task = await db.get(EvaluationTask, task_id)
-    if not task:
-        errors.append(f"评估任务不存在: {task_id}")
-        return {"errors": errors}
+    async with _get_db() as db:
+        # 更新任务状态为 running
+        task = await db.get(EvaluationTask, task_id)
+        if not task:
+            errors.append(f"评估任务不存在: {task_id}")
+            return {"errors": errors}
 
-    task.status = EvalTaskStatus.RUNNING
-    await db.commit()
-
-    # 查询岗位
-    job = await db.get(Job, job_id)
-    if not job:
-        task.status = EvalTaskStatus.FAILED
-        task.error_message = "岗位不存在"
+        task.status = EvalTaskStatus.RUNNING
         await db.commit()
-        errors.append("岗位不存在")
-        return {"errors": errors}
 
-    # 查询 pending 申请
-    stmt = (
-        select(Application)
-        .where(
-            Application.job_id == job_id,
-            Application.status == ApplicationStatus.PENDING,
+        # 查询岗位
+        job = await db.get(Job, job_id)
+        if not job:
+            task.status = EvalTaskStatus.FAILED
+            task.error_message = "岗位不存在"
+            await db.commit()
+            errors.append("岗位不存在")
+            return {"errors": errors}
+
+        # 查询 pending 申请
+        stmt = (
+            select(Application)
+            .where(
+                Application.job_id == job_id,
+                Application.status == ApplicationStatus.PENDING,
+            )
+            .options(selectinload(Application.applicant))
         )
-        .options(selectinload(Application.applicant))
-    )
-    applications = list((await db.execute(stmt)).scalars().all())
+        applications = list((await db.execute(stmt)).scalars().all())
 
-    if not applications:
-        task.status = EvalTaskStatus.FAILED
-        task.error_message = "该岗位没有待评估的申请"
-        await db.commit()
-        errors.append("该岗位没有待评估的申请")
-        return {"errors": errors}
+        if not applications:
+            task.status = EvalTaskStatus.FAILED
+            task.error_message = "该岗位没有待评估的申请"
+            await db.commit()
+            errors.append("该岗位没有待评估的申请")
+            return {"errors": errors}
 
-    # 构建岗位信息
-    job_info: dict[str, Any] = {
-        "title": job.title,
-        "description": job.description,
-        "skills_required": job.skills_required,
-        "requirements": job.requirements,
-        "salary_min": job.salary_min,
-        "salary_max": job.salary_max,
-        "location": job.location,
-        "work_type": job.work_type.value,
-        "interview_quota": job.interview_quota,
-    }
-
-    # 构建申请列表
-    app_list: list[dict[str, Any]] = []
-    for app in applications:
-        app_data: dict[str, Any] = {
-            "application_id": str(app.id),
-            "applicant_name": app.applicant.name if app.applicant else None,
-            "resume_text": app.resume_text,
-            "structured_resume": app.structured_resume,
-            "cover_letter": app.cover_letter,
+        # 构建岗位信息
+        job_info: dict[str, Any] = {
+            "title": job.title,
+            "description": job.description,
+            "skills_required": job.skills_required,
+            "requirements": job.requirements,
+            "salary_min": job.salary_min,
+            "salary_max": job.salary_max,
+            "location": job.location,
+            "work_type": job.work_type.value,
         }
-        app_list.append(app_data)
 
-    # 更新 total_count
-    task.total_count = len(app_list)
-    await db.commit()
+        # 构建申请列表
+        app_list: list[dict[str, Any]] = []
+        for app in applications:
+            app_data: dict[str, Any] = {
+                "application_id": str(app.id),
+                "applicant_name": app.applicant.name if app.applicant else None,
+                "resume_text": app.resume_text,
+                "structured_resume": app.structured_resume,
+                "cover_letter": app.cover_letter,
+            }
+            app_list.append(app_data)
+
+        # 更新 total_count
+        task.total_count = len(app_list)
+        await db.commit()
 
     await adispatch_custom_event("progress", {
         "status": "简历收集完成",
@@ -125,7 +126,6 @@ async def collect_node(state: EvaluationState) -> dict[str, Any]:
 
 async def evaluate_node(state: EvaluationState) -> dict[str, Any]:
     """评估阶段：逐份评估简历（LLM × N）"""
-    db = _get_db()
     job_info = cast(dict[str, Any], state.get("job_info", {}))
     applications = cast(list[dict[str, Any]], state.get("applications", []))
     task_id = state.get("task_id", "")
@@ -172,10 +172,11 @@ async def evaluate_node(state: EvaluationState) -> dict[str, Any]:
                 evaluated_count += 1
 
                 # 更新进度
-                task = await db.get(EvaluationTask, task_id)
-                if task:
-                    task.evaluated_count = evaluated_count
-                    await db.commit()
+                async with _get_db() as db:
+                    task = await db.get(EvaluationTask, task_id)
+                    if task:
+                        task.evaluated_count = evaluated_count
+                        await db.commit()
 
                 await adispatch_custom_event("progress", {
                     "status": "正在评估简历",
@@ -196,11 +197,12 @@ async def evaluate_node(state: EvaluationState) -> dict[str, Any]:
 
     # 如果所有简历都评估失败
     if not evaluation_results:
-        task = await db.get(EvaluationTask, task_id)
-        if task:
-            task.status = EvalTaskStatus.FAILED
-            task.error_message = "所有简历评估失败: " + "; ".join(errors)
-            await db.commit()
+        async with _get_db() as db:
+            task = await db.get(EvaluationTask, task_id)
+            if task:
+                task.status = EvalTaskStatus.FAILED
+                task.error_message = "所有简历评估失败: " + "; ".join(errors)
+                await db.commit()
 
     return {
         "evaluation_results": evaluation_results,
@@ -210,16 +212,15 @@ async def evaluate_node(state: EvaluationState) -> dict[str, Any]:
 
 
 async def screen_node(state: EvaluationState) -> dict[str, Any]:
-    """筛选阶段：按加权总分排序，取 Top N 进面（纯排序，无 LLM）"""
+    """筛选阶段：按固定阈值 60 分筛选（纯排序，无 LLM）"""
     evaluation_results = list(cast(list[dict[str, Any]], state.get("evaluation_results", [])))
-    job_info = cast(dict[str, Any], state.get("job_info", {}))
 
     if not evaluation_results:
         return {
             "screening_result": {
                 "recommend_list": [],
                 "reject_list": [],
-                "cutoff_score": 0.0,
+                "cutoff_score": 60.0,
             },
         }
 
@@ -232,18 +233,10 @@ async def screen_node(state: EvaluationState) -> dict[str, Any]:
         reverse=True,
     )
 
-    # 确定 cutoff（请求级别覆盖优先于岗位配置）
-    interview_quota = state.get("interview_quota_override") or job_info.get("interview_quota")
-
-    if interview_quota is not None:
-        quota = int(interview_quota)
-        recommend_list = sorted_results[:quota]
-        reject_list = sorted_results[quota:]
-        cutoff_score = float(recommend_list[-1].get("weighted_total", 0)) if recommend_list else 0.0
-    else:
-        recommend_list = [r for r in sorted_results if float(r.get("weighted_total", 0)) >= 60]
-        reject_list = [r for r in sorted_results if float(r.get("weighted_total", 0)) < 60]
-        cutoff_score = 60.0
+    # 固定阈值：ai_score >= 60 → recommend, < 60 → reject
+    cutoff_score = 60.0
+    recommend_list = [r for r in sorted_results if float(r.get("weighted_total", 0)) >= cutoff_score]
+    reject_list = [r for r in sorted_results if float(r.get("weighted_total", 0)) < cutoff_score]
 
     screening_result: dict[str, Any] = {
         "recommend_list": recommend_list,
@@ -337,7 +330,6 @@ async def review_node(state: EvaluationState) -> dict[str, Any]:
 
 async def save_draft_node(state: EvaluationState) -> dict[str, Any]:
     """保存草稿阶段：写入 ai_* 草稿字段，不更新 Application.status"""
-    db = _get_db()
     evaluation_results = cast(list[dict[str, Any]], state.get("evaluation_results", []))
     screening_result = cast(dict[str, Any], state.get("screening_result", {}))
     review_adjustments = cast(list[dict[str, Any]], state.get("review_adjustments", []))
@@ -374,80 +366,81 @@ async def save_draft_node(state: EvaluationState) -> dict[str, Any]:
     reject_count = 0
     now = datetime.now(UTC)
 
-    for app_id, decision in decision_map.items():
-        application = await db.get(Application, app_id)
-        if not application:
-            errors.append(f"申请不存在: {app_id}")
-            continue
-
-        eval_result = eval_map.get(app_id, {})
-        evaluation_data = eval_result.get("evaluation", {})
-
-        application.ai_score = eval_result.get("weighted_total")
-        application.ai_evaluation = evaluation_data
-        application.ai_decision = decision
-        application.ai_evaluated_at = now
-
-        if app_id in adjustment_reasons:
-            application.ai_decision_reason = f"边界复评调整: {adjustment_reasons[app_id]}"
-        else:
-            evaluation_summary = evaluation_data.get("summary", "")
-            application.ai_decision_reason = evaluation_summary or ("AI 建议进入面试" if decision == "recommend" else "AI 建议淘汰")
-
-        if decision == "recommend":
-            recommend_count += 1
-        else:
-            reject_count += 1
-
-    # 标记评估失败的申请
-    evaluated_ids = set(decision_map.keys())
-    for app_data in state.get("applications", []):
-        app_id = str(app_data.get("application_id", ""))
-        if app_id and app_id not in evaluated_ids:
+    async with _get_db() as db:
+        for app_id, decision in decision_map.items():
             application = await db.get(Application, app_id)
-            if application:
-                application.ai_decision = "error"
-                application.ai_decision_reason = "简历评估失败，请重新触发评估"
-                application.ai_evaluated_at = now
+            if not application:
+                errors.append(f"申请不存在: {app_id}")
+                continue
 
-    # Build evaluation details for the result summary
-    evaluation_details: list[dict[str, Any]] = []
-    for app_id, decision in decision_map.items():
-        eval_result = eval_map.get(app_id, {})
-        evaluation_data = eval_result.get("evaluation", {})
-        evaluation_details.append({
-            "application_id": app_id,
-            "applicant_name": eval_result.get("applicant_name"),
-            "ai_score": eval_result.get("weighted_total"),
-            "ai_evaluation": evaluation_data.get("dimensions", []),
-            "ai_decision": decision,
-            "ai_decision_reason": (
-                f"边界复评调整: {adjustment_reasons[app_id]}"
-                if app_id in adjustment_reasons
-                else evaluation_data.get("summary", "") or
-                    ("AI 建议进入面试" if decision == "recommend" else "AI 建议淘汰")
-            ),
-        })
+            eval_result = eval_map.get(app_id, {})
+            evaluation_data = eval_result.get("evaluation", {})
 
-    # 更新 evaluation_task 状态
-    task = await db.get(EvaluationTask, task_id)
-    if task:
-        if task.status != EvalTaskStatus.FAILED:
-            task.status = EvalTaskStatus.COMPLETED
-        task.result_summary = {
-            "recommend_count": recommend_count,
-            "reject_count": reject_count,
-            "cutoff_score": screening_result.get("cutoff_score", 0),
-            "total_evaluated": len(evaluation_results),
-            "borderline_adjustments": len(
-                [a for a in review_adjustments if a.get("action") == "adjust"]
-            ),
-            "evaluation_details": evaluation_details,
-        }
-        if errors:
-            task.error_message = "; ".join(errors)
+            application.ai_score = eval_result.get("weighted_total")
+            application.ai_evaluation = evaluation_data
+            application.ai_decision = decision
+            application.ai_evaluated_at = now
 
-    await db.commit()
+            if app_id in adjustment_reasons:
+                application.ai_decision_reason = f"边界复评调整: {adjustment_reasons[app_id]}"
+            else:
+                evaluation_summary = evaluation_data.get("summary", "")
+                application.ai_decision_reason = evaluation_summary or ("AI 建议进入面试" if decision == "recommend" else "AI 建议淘汰")
+
+            if decision == "recommend":
+                recommend_count += 1
+            else:
+                reject_count += 1
+
+        # 标记评估失败的申请
+        evaluated_ids = set(decision_map.keys())
+        for app_data in state.get("applications", []):
+            app_id = str(app_data.get("application_id", ""))
+            if app_id and app_id not in evaluated_ids:
+                application = await db.get(Application, app_id)
+                if application:
+                    application.ai_decision = "error"
+                    application.ai_decision_reason = "简历评估失败，请重新触发评估"
+                    application.ai_evaluated_at = now
+
+        # Build evaluation details for the result summary
+        evaluation_details: list[dict[str, Any]] = []
+        for app_id, decision in decision_map.items():
+            eval_result = eval_map.get(app_id, {})
+            evaluation_data = eval_result.get("evaluation", {})
+            evaluation_details.append({
+                "application_id": app_id,
+                "applicant_name": eval_result.get("applicant_name"),
+                "ai_score": eval_result.get("weighted_total"),
+                "ai_evaluation": evaluation_data.get("dimensions", []),
+                "ai_decision": decision,
+                "ai_decision_reason": (
+                    f"边界复评调整: {adjustment_reasons[app_id]}"
+                    if app_id in adjustment_reasons
+                    else evaluation_data.get("summary", "") or
+                        ("AI 建议进入面试" if decision == "recommend" else "AI 建议淘汰")
+                ),
+            })
+
+        # 更新 evaluation_task 状态
+        task = await db.get(EvaluationTask, task_id)
+        if task:
+            if task.status != EvalTaskStatus.FAILED:
+                task.status = EvalTaskStatus.COMPLETED
+            task.result_summary = {
+                "recommend_count": recommend_count,
+                "reject_count": reject_count,
+                "cutoff_score": screening_result.get("cutoff_score", 0),
+                "total_evaluated": len(evaluation_results),
+                "borderline_adjustments": len(
+                    [a for a in review_adjustments if a.get("action") == "adjust"]
+                ),
+                "evaluation_details": evaluation_details,
+            }
+            if errors:
+                task.error_message = "; ".join(errors)
+
+        await db.commit()
 
     await adispatch_custom_event("progress", {"status": "评估完成"})
 

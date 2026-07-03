@@ -28,7 +28,6 @@ async def test_create_job_as_recruiter(
     assert data["skills_required"] == ["Python", "FastAPI"]
     assert data["job_code"].startswith("J")
     assert len(data["job_code"]) == 6
-    assert data["interview_quota"] == 1  # default
     assert data["head_count"] == 1       # default
 
 
@@ -379,22 +378,20 @@ async def test_job_code_is_unique_and_auto_generated(
 
 
 @pytest.mark.asyncio
-async def test_create_job_with_custom_quota_and_headcount(
+async def test_create_job_with_custom_head_count(
     client: AsyncClient, auth_headers_recruiter: dict[str, str]
 ) -> None:
-    """Creating a job with explicit interview_quota and head_count"""
+    """Creating a job with explicit head_count"""
     resp = await client.post(
         "/api/jobs/",
         json={
             "title": "岗位C",
             "description": "描述C，至少十个字",
             "requirements": "无",
-            "interview_quota": 5,
             "head_count": 3,
         },
         headers=auth_headers_recruiter,
     )
     assert resp.status_code == 201
     data = resp.json()
-    assert data["interview_quota"] == 5
     assert data["head_count"] == 3

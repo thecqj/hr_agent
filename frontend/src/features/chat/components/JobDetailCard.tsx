@@ -56,7 +56,7 @@ export function JobDetailCard({ card }: JobDetailCardProps) {
           )}
           <span className="flex items-center gap-1">
             <Users className="h-3 w-3" />
-            编制 {job.head_count} / 进面 {job.interview_quota}
+            编制 {job.head_count}
           </span>
           <span>{workTypeLabels[job.work_type] || job.work_type}</span>
         </div>

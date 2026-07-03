@@ -232,7 +232,6 @@ export default function JobDashboardPage() {
               <TableHead>岗位名称</TableHead>
               <TableHead>状态</TableHead>
               <TableHead className="text-center">申请人数</TableHead>
-              <TableHead className="text-center w-[90px]">进面人数</TableHead>
               <TableHead className="text-center w-[90px]">招聘人数</TableHead>
               <TableHead>发布时间</TableHead>
               <TableHead className="text-right">操作</TableHead>
@@ -251,7 +250,6 @@ export default function JobDashboardPage() {
                 <TableCell className="text-center">
                   {job.applications_count ?? 0}
                 </TableCell>
-                <TableCell className="text-center">{job.interview_quota}</TableCell>
                 <TableCell className="text-center">{job.head_count}</TableCell>
                 <TableCell>
                   {new Date(job.created_at).toLocaleDateString()}
