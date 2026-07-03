@@ -18,9 +18,10 @@ from app.schemas.agent import ResumeEvaluation, DimensionScore
 
 
 @pytest.fixture(autouse=True)
-def mock_get_config(mock_db: AsyncMock) -> MagicMock:
-    """Mock get_config() for all node tests — nodes get db from config now."""
-    with patch("app.services.agent.nodes.get_config", return_value={"configurable": {"db": mock_db}}) as m:
+def mock_async_session(mock_db: AsyncMock) -> MagicMock:
+    """Mock async_session() for all node tests — nodes get independent sessions."""
+    session_factory = MagicMock(return_value=mock_db)
+    with patch("app.database.async_session", session_factory) as m:
         yield m
 
 
@@ -33,8 +34,10 @@ def mock_adispatch() -> MagicMock:
 
 @pytest.fixture
 def mock_db() -> AsyncMock:
-    """Provide a shared mock db session for node tests."""
+    """Provide a shared mock db session that supports async with context manager."""
     db = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
     mock_task = MagicMock()
     db.get.return_value = mock_task
     return db

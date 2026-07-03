@@ -144,16 +144,25 @@ def _mock_result(
 
 @pytest.fixture
 def mock_db() -> AsyncMock:
-    """Mock AsyncSession — all tests share this."""
-    return AsyncMock(spec=AsyncSession)
+    """Mock AsyncSession that supports `async with` context manager."""
+    db = AsyncMock(spec=AsyncSession)
+    # Support `async with _get_db() as db:` pattern
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+    return db
 
 
 @pytest.fixture(autouse=True)
-def mock_get_config(mock_db: AsyncMock) -> Any:
-    """Mock LangGraph get_config to inject mock DB and user_id."""
+def mock_async_session(mock_db: AsyncMock) -> Any:
+    """Mock async_session() to return a context-manager-compatible mock DB,
+    and mock get_config() to inject user_id."""
+    session_factory = MagicMock(return_value=mock_db)
     with patch(
+        "app.database.async_session",
+        session_factory,
+    ), patch(
         "app.services.conversation.tools.get_config",
-        return_value={"configurable": {"db": mock_db, "user_id": TEST_USER_ID}},
+        return_value={"configurable": {"user_id": TEST_USER_ID}},
     ):
         yield
 

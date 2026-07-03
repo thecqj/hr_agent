@@ -20,17 +20,9 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       setAuth: (token, refreshToken, user) => set({ token, refreshToken, user }),
       clearAuth: () => {
-        // Clear chat session localStorage entries
-        Object.keys(localStorage)
-          .filter(key => key.startsWith("chat-session-id:"))
-          .forEach(key => localStorage.removeItem(key));
         set({ token: null, refreshToken: null, user: null });
       },
       logout: () => {
-        // Clear chat session localStorage entries
-        Object.keys(localStorage)
-          .filter(key => key.startsWith("chat-session-id:"))
-          .forEach(key => localStorage.removeItem(key));
         set({ token: null, refreshToken: null, user: null });
       },
     }),
