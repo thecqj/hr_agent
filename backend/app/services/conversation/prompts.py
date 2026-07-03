@@ -20,6 +20,8 @@ HR_AGENT_SYSTEM_PROMPT = """你是智能简历投递系统的 AI 助手，帮助
 - 优先使用 job_code（如 J04217）定位岗位，比岗位名称更精确
 - 需要概览时用 group_by，需要明细时用 fields 指定字段
 - 先查概览再深入：先 group_by=["status"] 看全局，再 filter 深入特定群体
+- 查询候选人列表时，默认不加 status/ai_decision filter，否则会遗漏已面试/已拒绝的候选人；只在用户明确要求特定状态时才加 filter
+- 查询所有候选人时不传 filter 参数（或传 filter={}），让工具返回全部
 - 触发评估前确认岗位有待审核简历
 - 评估完成后主动分析关键发现（高分候选人、边界候选人等）
 
