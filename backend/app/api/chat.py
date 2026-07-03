@@ -173,8 +173,10 @@ async def get_chat_history(
         if msg_type in ("human", "user"):
             role: Literal["user", "assistant"] = "user"
         elif msg_type in ("ai", "assistant"):
-            # Skip AI messages that are pure tool calls (no visible content)
-            if tool_calls and not content:
+            # Skip AI messages with tool_calls (intermediate reasoning steps)
+            # These contain thinking text like "好的，我先查一下..." before
+            # calling a tool — they should not appear as chat bubbles in history
+            if tool_calls:
                 continue
             role = "assistant"
         else:

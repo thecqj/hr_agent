@@ -18,7 +18,7 @@ export function ChatMessages({ messages }: ChatMessagesProps) {
     <div className="flex-1 overflow-y-auto p-3 space-y-3">
       {messages.length === 0 && (
         <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-          输入指令开始，例如「帮我筛选前端开发岗位的简历」
+          👋 你好！我是 HR 智能助手，可以帮你查询岗位、筛选简历、评估候选人。有什么我能帮你的吗？
         </div>
       )}
       {messages.map((msg, i) =>

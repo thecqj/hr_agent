@@ -883,7 +883,7 @@ ReAct agent 回复使用 Markdown 渲染（react-markdown + remark-gfm），不�
 
 | Hook | 说明 |
 |------|------|
-| `useChat()` | 管理 messages/isProcessing/sessionId；sendMessage 处理 SSE 事件流（tool_start/tool_end/text_delta/progress/result/error）；closeSession 关闭并重置；validateSession 恢复历史消息；返回 {messages, isProcessing, sessionId, sendMessage, disconnect, clearMessages, closeSession, validateSession} |
+| `useChat()` | 管理 messages/isProcessing/sessionId；sendMessage 处理 SSE 事件流（tool_start/tool_end/text_delta/progress/result/error）；closeSession 关闭并重置；loadHistory 按需恢复历史消息（仅在用户打开聊天窗口时调用，不自动 mount）；返回 {messages, isProcessing, sessionId, sendMessage, disconnect, clearMessages, closeSession, loadHistory} |
 | `useBubbleDrag()` | ChatBubble 自由拖拽（x+y）+ 水平吸附到最近边缘 + 垂直位置持久化（localStorage），含 NaN 防护 |
 | `useChatWindowDragResize(bubbleSide)` | ChatWindow 自由移动 + 可调整大小（localStorage 持久化） |
 

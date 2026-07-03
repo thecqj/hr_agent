@@ -43,6 +43,7 @@ export function ChatBubble() {
   const handlePointerUp = () => {
     if (!isOpen) {
       handlers.onPointerUp();
+      chat.loadHistory();
     }
     // Toggle open/close on click (non-drag). We must do this in pointerUp
     // instead of onClick because setPointerCapture on the outer div causes

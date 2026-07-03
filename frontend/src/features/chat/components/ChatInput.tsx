@@ -33,7 +33,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="输入指令，如「帮我筛选前端岗位简历」"
+          placeholder="问我任何招聘相关的问题…"
           disabled={disabled}
           className="text-sm"
         />

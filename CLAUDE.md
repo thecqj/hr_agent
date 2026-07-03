@@ -1,41 +1,61 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 ## Project Overview
-- 智能简历投递系统（HR Agent），帮助求职者自动匹配岗位并投递简历
-- 技术栈：FastAPI + SQLAlchemy 2.0 + Pydantic v2 (后端), Next.js + TypeScript (前端)
-- 当前阶段：HR-Agent
 
-## Repository Architecture & Exploration Protocols
+智能简历投递系统（HR Agent）— helps job seekers auto-match positions and submit resumes, and helps recruiters evaluate candidates via AI.
 
-### 1. Global Navigation: `skeleton.md`
-- **Purpose**: `skeleton.md` is the source of truth for the project's overall architecture, file layout, and major API signatures.
-- **First Action**: Every time you start a new task or transition to the `writing-plans` stage, you **MUST** read `skeleton.md` first to build a mental map of the system's structure and module boundaries.
-- **Maintenance**: After implementing changes, ensure relevant updates are made to `skeleton.md` if any public interfaces, classes, or folder structures were modified.
-
-### 2. Precision Exploration Rules (Context Discipline)
-When you are in the `writing-plans` (Detailed Design) stage, you **MUST** read relevant source code to ensure technical precision, but you must do so with aggressive context discipline under the following rules:
-  
-- **Targeted Domain Reading (Laser Focus)**:
-  - Restrict deep reading strictly to the specific module, class, or functions directly targeted by the design spec.
-  - If a file is over 500 lines, use specific line ranges or grep for exact definitions, rather than reading the whole file blindly.
-
-- **Dependency Analysis (Conditional Traversal)**:
-  - **Strongly Coupled**: If the target module heavily depends on or interacts with another component, you may read that dependency's interface/header.
-  - **Weakly Coupled / Utility**: If it just uses general utilities or peripheral modules, **DO NOT** read their implementations. Trust their function names or docstrings visible in `skeleton.md`.
-
-- **Anti-Greed Guardrail**:
-  - Never execute blanket `grep` or `find` commands that scan the whole project or massive subdirectories.
-  - Every file you open during the planning phase must have an explicit, justified reason in your inner monologue (e.g., "Reading X to check Y's method signature").
-
-
-## Python Code Conventions
-* **Strict Type Hints**: Every function/method must have explicit parameter and return type hints (use `-> None` if empty).
-* **Mypy Strict**: Code must pass `mypy --strict`. Use modern syntax (e.g., `int | None`, `list[str]`). Always run `mypy --strict` to validate the typed correctness of the generated code after implementation.
-* **Layer Separation (Crucial)**:
-  * **Database (ORM)**: Use modern SQLAlchemy 2.0 type-annotated style (e.g., `Mapped[str] = mapped_column(...)`).
-  * **Data Validation (DTO/API)**: Use `Pydantic (v2)` exclusively for request/response schemas, API boundaries, and configuration.
-
+**Stack**: FastAPI + SQLAlchemy 2.0 (async) + Pydantic v2 + LangGraph (backend), React 19 + TypeScript + Vite + shadcn/ui + Zustand (frontend). LLM via DeepSeek API.
 
 ## Commands
-- 后端环境: `cd backend && uv venv --python 3.12 && source .venv/bin/activate && uv pip install -r requirements.txt`
-- 前端环境: `cd frontend && npm install && npm run dev`
-- 类型检查: `cd backend && uv run mypy --strict app/`
-- 运行测试: `cd backend && uv run pytest tests/ -v`
+
+### Backend (from `backend/`)
+
+```bash
+# Setup
+uv venv .venv --python 3.12 && source .venv/bin/activate && uv pip install -r requirements.txt
+
+# Run dev server
+uvicorn app.main:app --reload --port 8000
+
+# Run all tests
+pytest tests/ -v
+
+# Run a single test file
+pytest tests/test_auth_api.py -v
+
+# Run a single test by name
+pytest tests/test_jobs_api.py::test_create_job -v
+
+# Type check (must pass)
+uv run mypy --strict app/
+
+# Database migrations
+alembic upgrade head
+alembic revision --autogenerate -m "description"
+```
+
+### Frontend (from `frontend/`)
+
+```bash
+npm install
+npm run dev        # Vite dev server
+npm run build      # tsc + vite build
+npm run lint       # ESLint
+```
+
+### Prerequisites
+
+- PostgreSQL 18 + pgvector extension
+- Database: `jobboard` (dev), `jobboard_test` (test), user `app:password`
+- Copy `backend/.env.example` → `backend/.env` and fill in `DEEPSEEK_API_KEY`
+
+
+## Claude Code
+
+- 每次启动新任务，**必须** 先阅读 `skeleton.md`，以构建系统结构和模块边界的思维导图。
+- 探索代码时，非必要不深度阅读代码，应信任 `skeleton.md` 中可见的函数名或文档字符串；深度阅读仅限于设计规范直接涉及的特定模块、类或函数。
+- 每当任务完成后：
+    - 若涉及 Python 代码的变动，运行 `uv run mypy --strict app/` 验证代码的类型正确性，未通过验证修正代码直至通过检查。 
+    - 当代码有结构性的变更后，更新 `skeleton.md`。

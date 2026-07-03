@@ -266,6 +266,8 @@ async def query_applications(
       - 某人评估详情: query_applications(job_code="J04217",
           filter={"candidate_name": "张三"},
           fields=["ai_score", "ai_evaluation", "ai_decision_reason"])
+      - 查所有候选人: query_applications(job_code="J04217")
+      - 查所有候选人(无过滤): query_applications(job_code="J04217", filter={})
     """
     user_id = _get_user_id()
 
@@ -372,6 +374,8 @@ async def query_applications(
                 query = query.order_by(Application.ai_score.asc().nullslast())
             else:
                 query = query.order_by(Application.ai_score.desc().nullslast())
+            # Secondary sort: stable order for equal/NULL ai_score
+            query = query.order_by(Application.created_at.desc())
         else:
             query = query.order_by(Application.created_at.desc())
 
@@ -412,7 +416,7 @@ async def query_applications(
                 elif f == "structured_resume" and app.structured_resume is not None:
                     item["structured_resume"] = "(available)"
 
-        lines.append(str(item))
+            lines.append(str(item))
 
         return "\n".join(lines)
 

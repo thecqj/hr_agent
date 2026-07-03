@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback } from "react";
 
 import type { ChatMessage, ProgressInfo, ToolStatusInfo } from "@/features/chat/types/chat";
 import { sendChatMessage, closeSession as apiCloseSession, getSession, getHistory } from "@/features/chat/api/chat";
@@ -260,22 +260,20 @@ export function useChat() {
     setSessionId(null);
   }, [sessionId, userId]);
 
-  const validateSession = useCallback(async (sid: string | null) => {
-    if (!sid) return;
+  const loadHistory = useCallback(async () => {
+    const savedId = loadSessionId(userId);
+    if (!savedId) return;
     try {
-      const info = await getSession(sid);
+      setSessionId(savedId);
+      const info = await getSession(savedId);
       if (info.has_history) {
-        try {
-          const history = await getHistory(sid);
-          if (history.messages.length > 0) {
-            setMessages(history.messages.map((m) => ({
-              role: m.role,
-              content: m.content,
-              timestamp: m.timestamp,
-            })));
-          }
-        } catch {
-          // History fetch failed — start with empty view
+        const history = await getHistory(savedId);
+        if (history.messages.length > 0) {
+          setMessages(history.messages.map((m) => ({
+            role: m.role,
+            content: m.content,
+            timestamp: m.timestamp,
+          })));
         }
       } else {
         clearSessionId(userId);
@@ -283,38 +281,6 @@ export function useChat() {
       }
     } catch {
       // Keep current session_id
-    }
-  }, [userId]);
-
-  // Auto-validate session on mount or user change
-  const hasValidated = useRef(false);
-  useEffect(() => {
-    // Reset validation state on user change
-    hasValidated.current = false;
-    const savedId = loadSessionId(userId);
-    setSessionId(savedId);
-
-    if (savedId && !hasValidated.current) {
-      hasValidated.current = true;
-      getSession(savedId).then((info) => {
-        if (info.has_history) {
-          getHistory(savedId).then((history) => {
-            if (history.messages.length > 0) {
-              setMessages(history.messages.map((m) => ({
-                role: m.role,
-                content: m.content,
-                timestamp: m.timestamp,
-              })));
-            }
-          }).catch(() => {});
-        } else {
-          clearSessionId(userId);
-          setSessionId(null);
-        }
-      }).catch(() => {});
-    } else if (!savedId) {
-      // No saved session for this user — clear messages
-      setMessages([]);
     }
   }, [userId]);
 
@@ -326,7 +292,7 @@ export function useChat() {
     disconnect,
     clearMessages,
     closeSession,
-    validateSession,
+    loadHistory,
   };
 }
 

@@ -27,3 +27,6 @@ Desktop.ini
 
 # mypy
 .mypy_cache/
+
+# Worktrees
+.worktrees/
