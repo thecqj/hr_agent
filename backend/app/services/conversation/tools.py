@@ -416,7 +416,7 @@ async def query_applications(
                 elif f == "structured_resume" and app.structured_resume is not None:
                     item["structured_resume"] = "(available)"
 
-        lines.append(str(item))
+            lines.append(str(item))
 
         return "\n".join(lines)
 
