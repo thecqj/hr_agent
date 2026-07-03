@@ -37,7 +37,6 @@ class TestJobDetailCard:
                 "location": "北京",
                 "work_type": "hybrid",
                 "head_count": 3,
-                "interview_quota": 5,
                 "status": "active",
             }
         )

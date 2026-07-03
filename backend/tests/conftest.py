@@ -178,7 +178,6 @@ async def recruiter_with_job(
             "skills_required": ["React", "TypeScript", "CSS"],
             "location": "北京",
             "work_type": "onsite",
-            "interview_quota": 2,
             "head_count": 1,
         },
         headers=recruiter_headers,

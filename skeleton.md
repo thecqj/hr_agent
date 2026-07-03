@@ -192,7 +192,7 @@ class Job(Base, TimestampMixin):           # table "jobs"
     status:            Mapped[JobStatus]   # default=ACTIVE
     job_code:          Mapped[str]         # String(6), unique, indexed; 格式 J10000~J99999
     head_count:        Mapped[int]         # 最终招聘人数, default=1
-    interview_quota:   Mapped[int]         # 面试人数上限, default=1
+    # interview_quota 已删除 — 筛选逻辑改为固定阈值 ai_score >= 60
     # 关系
     recruiter:    Mapped[User]              # back_populates="jobs"
     applications: Mapped[list[Application]]  # cascade delete-orphan
@@ -275,9 +275,9 @@ class Conversation(Base, TimestampMixin):          # table "conversations"
     user_id:           Mapped[uuid.UUID]   # FK → users.id, indexed
     session_id:        Mapped[str]         # String(36), unique — equals LangGraph thread_id
     summary:           Mapped[str | None]  # Text, LLM 生成的对话摘要
-    context_entities:  Mapped[Any | None]  # JSONB, 结构化上下文实体
-    is_active:         Mapped[bool]        # default=True; 关闭时设为 False
-    # 复合索引: ix_conversations_user_active on (user_id, is_active)
+    # is_active 已删除 — 会话生命周期由 session_id 管理
+    # context_entities 已删除 — 死功能，无写入
+    # ix_conversations_user_active 索引已删除
 ```
 
 ---
@@ -299,10 +299,10 @@ class Conversation(Base, TimestampMixin):          # table "conversations"
 
 | 类名 | 关键字段 |
 |------|---------|
-| `JobCreateRequest` | `title`, `description`, `requirements`, `salary_min/max`, `location`, `work_type`, `skills_required`, `head_count?`, `interview_quota` (required, default=1) |
-| `JobUpdateRequest` | 所有字段 Optional（部分更新，含 `requirements`, `interview_quota`, `head_count`） |
+| `JobCreateRequest` | `title`, `description`, `requirements`, `salary_min/max`, `location`, `work_type`, `skills_required`, `head_count?` |
+| `JobUpdateRequest` | 所有字段 Optional（部分更新，含 `requirements`, `head_count`） |
 | `JobStatusUpdateRequest` | `status: JobStatus` |
-| `JobResponse` | 全部字段 + `job_code`, `head_count`, `recruiter_name`, `applications_count`, `interview_quota`, `requirements`; `from_attributes=True` |
+| `JobResponse` | 全部字段 + `job_code`, `head_count`, `recruiter_name`, `applications_count`, `requirements`; `from_attributes=True` |
 | `JobListResponse` | `total`, `page`, `page_size`, `items: list[JobResponse]` |
 
 #### `application.py` — 投递 DTO
@@ -327,7 +327,7 @@ class Conversation(Base, TimestampMixin):          # table "conversations"
 | `DimensionScore` | `name: str`, `score: float (0-100)`, `weight: float (0-1)`, `reason: str` |
 | `ResumeEvaluation` | `dimensions: list[DimensionScore]`, `weighted_total: float`, `suggestion: Literal["recommend","reject","neutral"]`, `summary: str` |
 | `BorderlineReview` | `application_id: str`, `action: Literal["keep","adjust"]`, `new_decision?`, `reason: str` |
-| `EvaluateRequest` | `interview_quota?: int` |
+| `EvaluateRequest` | *(空 — 无参数)* |
 | `EvaluateResponse` | `task_id: str`, `status: str`, `total_count: int` |
 | `TaskStatusResponse` | `task_id`, `job_id`, `status: EvalTaskStatus`, `total_count`, `evaluated_count`, `result_summary?`, `error_message?`, `created_at`, `updated_at` |
 | `ConfirmDecision` | `application_id: str`, `final_decision: Literal["interview","reject"]`, `override_reason?` |
@@ -411,8 +411,8 @@ class Conversation(Base, TimestampMixin):          # table "conversations"
 | 方法 | 路径 | 认证 | 处理器 | 说明 |
 |------|------|------|--------|------|
 | POST | `/send` | 必须 | `send_chat_message()` | 发送消息，返回 SSE 流式响应（`text/event-stream`） |
-| POST | `/session/close` | 必须 | `close_session()` | 关闭会话（is_active=False），触发摘要生成 |
-| GET | `/session` | 必须 | `get_session()` | 查询活跃会话（`?session_id=xxx`），返回 `{session_id, has_history}` |
+| POST | `/session/close` | 必须 | `close_session()` | 关闭会话（资源清理），不触发摘要生成 |
+| GET | `/session` | 必须 | `get_session()` | 查询会话（通过 session_id）（`?session_id=xxx`），返回 `{session_id, has_history}` |
 | GET | `/history` | 必须 | `get_chat_history()` | 获取对话历史消息（`?session_id=xxx`），从 LangGraph checkpoint 读取 chat_history |
 
 SSE 事件类型：session, tool_start, tool_end, text_delta, progress, result, error, done
@@ -522,7 +522,7 @@ state.py      — EvaluationState(TypedDict): 工作流状态定义
                 job_id, triggered_by, task_id (输入)
                 job_info, applications (收集阶段)
                 evaluation_results, evaluated_count (评估阶段)
-                screening_result (筛选阶段)
+                screening_result (筛选阶段 — 固定阈值 ai_score >= 60)
                 review_adjustments (复评阶段)
                 errors (错误累积)
 
@@ -536,7 +536,7 @@ prompts.py    — LLM 提示词模板
 nodes.py      — LangGraph 节点实现
                 collect_node(state)  -> dict   # 收集 pending 申请（db 从 get_config 获取）
                 evaluate_node(state) -> dict   # 逐份 LLM 评估，adispatch_custom_event 进度
-                screen_node(state)   -> dict   # 按 quota/60 分阈值筛选
+                screen_node(state)   -> dict   # 按固定阈值 60 分筛选
                 review_node(state)   -> dict   # LLM 复评边界候选人
                 save_draft_node(state) -> dict # 写入 ai_* 草稿字段，含 evaluation_details
 
@@ -552,12 +552,12 @@ graph.py      — 工作流图定义 & 运行
 __init__.py   — 模块入口，导出 build_conversation_graph, ConversationContext
 
 state.py      — ConversationContext(TypedDict): state_modifier 上下文（create_react_agent 内部管理 messages，此模块仅定义 context injection 类型）
-                session_summary, context_entities
+                session_summary
 
 prompts.py    — ReAct 对话 LLM 提示词
                 HR_AGENT_SYSTEM_PROMPT: ReAct Agent 系统提示（6 条核心原则 + 工具策略 + 回复格式）
                 build_state_modifier(state: dict) -> str
-                  ↑ 动态注入 session_summary + context_entities
+                  ↑ 动态注入 session_summary
                 SUMMARIZE_SYSTEM_PROMPT: 对话摘要系统提示（JSON 输出，≤300 字）
                 build_summarize_user_prompt(history, existing_summary?) -> str
                   ↑ 构建摘要用户提示（支持增量更新）
@@ -573,7 +573,7 @@ tools.py      — ReAct Agent 7 个 Tool 定义
                     ↑ group_by: ["status"] / ["ai_decision"] / ["status","ai_decision"]
                   query_evaluation(job_code?, task_id?) -> str
                 写操作 Tool (4):
-                  trigger_evaluation(job_code?, job_title?, interview_quota?) -> str
+                  trigger_evaluation(job_code?, job_title?) -> str
                     ↑ 内嵌运行评估图，进度通过 adispatch_custom_event 冒泡
                   confirm_evaluation(task_id) -> str
                     ↑ 按 AI 建议批量更新候选人状态
@@ -726,7 +726,7 @@ type JobStatus = "draft" | "active" | "closed"
 interface Job              { id, recruiter_id, title, description, requirements,
                              salary_min?, salary_max?,
                              location?, work_type, skills_required, status, created_at, updated_at,
-                             job_code, head_count, interview_quota,
+                             job_code, head_count,
                              recruiter_name?, applications_count? }
 interface PaginatedResponse<T> { total, page, page_size, items: T[] }
 interface JobListParams    { keyword?, work_type?, status?, page?, page_size? }
@@ -900,7 +900,7 @@ interface ChatMessage  { role: "user"|"assistant", content, toolStatus?: ToolSta
 type ChatCard = EvaluationSummaryCardData | JobListCardData | JobDetailCardData | FunnelCardData | CandidateListCardData | ConfirmCardData
 interface EvaluationSummaryCardData { type: "evaluation_summary", task_id, job_title, total_count, recommended_count, rejected_count, result_page_url }
 interface JobListCardData           { type: "job_list", jobs: { job_code, title, status, head_count }[] }
-interface JobDetailCardData         { type: "job_detail", job: { job_code, title, description, requirements, skills_required, salary_min?, salary_max?, location?, work_type, head_count, interview_quota, status } }
+interface JobDetailCardData         { type: "job_detail", job: { job_code, title, description, requirements, skills_required, salary_min?, salary_max?, location?, work_type, head_count, status } }
 interface FunnelCardData            { type: "funnel", job_code, job_title, stages: FunnelStageData[] }
 interface CandidateListCardData     { type: "candidate_list", job_code, job_title, candidates: CandidateItemData[] }
 interface ConfirmCardData           { type: "confirm", action, params: Record<string, unknown> }

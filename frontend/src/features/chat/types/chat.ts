@@ -78,7 +78,6 @@ export interface JobDetailCardData {
     location: string | null;
     work_type: string;
     head_count: number;
-    interview_quota: number;
     status: string;
   };
 }

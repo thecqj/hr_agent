@@ -28,7 +28,6 @@ def _make_job(
     status: JobStatus = JobStatus.ACTIVE,
     work_type: WorkType = WorkType.ONSITE,
     head_count: int = 3,
-    interview_quota: int = 2,
     salary_min: int | None = 15000,
     salary_max: int | None = 30000,
     location: str | None = "北京",
@@ -44,7 +43,6 @@ def _make_job(
     job.status = status
     job.work_type = work_type
     job.head_count = head_count
-    job.interview_quota = interview_quota
     job.salary_min = salary_min
     job.salary_max = salary_max
     job.location = location
@@ -677,37 +675,6 @@ class TestTriggerEvaluation:
         assert "评估完成" in result
         assert "推荐" in result
         assert "3" in result
-
-    @pytest.mark.asyncio
-    async def test_interview_quota_override(self, mock_db: AsyncMock) -> None:
-        """interview_quota parameter overrides job's default."""
-        from app.services.conversation.tools import trigger_evaluation
-
-        job = _make_job(interview_quota=2)
-        completed_task = _make_eval_task(status=EvalTaskStatus.COMPLETED)
-
-        async def _mock_events() -> Any:
-            return
-            yield  # noqa: unreachable — makes this an async generator
-
-        mock_graph = MagicMock()
-        mock_graph.astream_events.return_value = _mock_events()
-
-        with patch("app.services.conversation.tools.resolve_job", new_callable=AsyncMock, return_value=job), \
-             patch("app.services.conversation.tools.adispatch_custom_event", new_callable=AsyncMock), \
-             patch("app.database.get_checkpointer", return_value=MagicMock()), \
-             patch("app.services.agent.graph.build_evaluation_graph", return_value=mock_graph):
-            mock_db.execute.side_effect = [
-                _mock_result(one_or_none=None),
-                _mock_result(scalar=3),
-            ]
-            mock_db.get.return_value = completed_task
-
-            await trigger_evaluation.ainvoke({"job_code": "J00001", "interview_quota": 5})
-
-        # The job's interview_quota should have been updated
-        assert job.interview_quota == 5
-        mock_db.commit.assert_called()
 
     @pytest.mark.asyncio
     async def test_graph_error(self, mock_db: AsyncMock) -> None:

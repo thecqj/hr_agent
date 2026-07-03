@@ -120,20 +120,30 @@ class DeepSeekProvider(BaseLLMProvider):
         history: list[dict[str, str]],
         existing_summary: str | None = None,
     ) -> str:
-        """生成对话摘要"""
+        """生成对话摘要 — 生成失败时返回旧摘要"""
         from app.services.conversation.prompts import (
             SUMMARIZE_SYSTEM_PROMPT,
             build_summarize_user_prompt,
         )
 
-        user_prompt = build_summarize_user_prompt(history, existing_summary)
-        raw = await self._call_chat(
-            SUMMARIZE_SYSTEM_PROMPT, user_prompt, retries=1
-        )
+        try:
+            user_prompt = build_summarize_user_prompt(history, existing_summary)
+            raw = await self._call_chat(
+                SUMMARIZE_SYSTEM_PROMPT, user_prompt, retries=1
+            )
 
-        # raw is already parsed dict from _call_chat
-        summary = raw.get("summary", "")
-        if summary:
-            return str(summary)[:500]
-        # Fallback: try to stringify the whole response
-        return json.dumps(raw, ensure_ascii=False)[:500]
+            # raw is already parsed dict from _call_chat
+            summary = raw.get("summary", "")
+            if summary:
+                return str(summary)[:500]
+            # Fallback: try to stringify the whole response
+            fallback = json.dumps(raw, ensure_ascii=False)[:500]
+            # If fallback looks like error content, return existing_summary instead
+            if existing_summary and len(fallback) < 20:
+                return existing_summary
+            return fallback
+        except Exception:
+            # On any error, return existing summary instead of error content
+            if existing_summary:
+                return existing_summary
+            return ""

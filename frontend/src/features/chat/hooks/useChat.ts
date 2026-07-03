@@ -1,42 +1,53 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 
 import type { ChatMessage, ProgressInfo, ToolStatusInfo } from "@/features/chat/types/chat";
 import { sendChatMessage, closeSession as apiCloseSession, getSession, getHistory } from "@/features/chat/api/chat";
+import { useAuthStore } from "@/features/auth/store/authStore";
 
-const SESSION_STORAGE_KEY = "chat-session-id";
+const STORAGE_KEY_PREFIX = "chat-session-id";
+
+function getSessionKey(userId: string | null): string {
+  return userId ? `${STORAGE_KEY_PREFIX}:${userId}` : STORAGE_KEY_PREFIX;
+}
 
 function generateSessionId(): string {
   return crypto.randomUUID();
 }
 
-function loadSessionId(): string | null {
+function loadSessionId(userId: string | null): string | null {
+  if (!userId) return null;
   try {
-    return localStorage.getItem(SESSION_STORAGE_KEY);
+    return localStorage.getItem(getSessionKey(userId));
   } catch {
     return null;
   }
 }
 
-function saveSessionId(id: string): void {
+function saveSessionId(userId: string | null, sessionId: string): void {
+  if (!userId) return;
   try {
-    localStorage.setItem(SESSION_STORAGE_KEY, id);
+    localStorage.setItem(getSessionKey(userId), sessionId);
   } catch {
     // localStorage may be unavailable
   }
 }
 
-function clearSessionId(): void {
+function clearSessionId(userId: string | null): void {
+  if (!userId) return;
   try {
-    localStorage.removeItem(SESSION_STORAGE_KEY);
+    localStorage.removeItem(getSessionKey(userId));
   } catch {
     // ignore
   }
 }
 
 export function useChat() {
+  const { user } = useAuthStore();
+  const userId = user?.id ?? null;
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [sessionId, setSessionId] = useState<string | null>(() => loadSessionId());
+  const [sessionId, setSessionId] = useState<string | null>(() => loadSessionId(userId));
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const sendMessage = useCallback((text: string) => {
@@ -64,7 +75,7 @@ export function useChat() {
           case "session": {
             const newSessionId = data.session_id as string;
             setSessionId(newSessionId);
-            saveSessionId(newSessionId);
+            saveSessionId(userId, newSessionId);
             break;
           }
 
@@ -214,7 +225,7 @@ export function useChat() {
     );
 
     abortControllerRef.current = controller;
-  }, [isProcessing, sessionId]);
+  }, [isProcessing, sessionId, userId]);
 
   const disconnect = useCallback(() => {
     if (abortControllerRef.current) {
@@ -242,21 +253,20 @@ export function useChat() {
       }
     }
 
+    // Clear localStorage for current user — next open = new session
+    clearSessionId(userId);
     setMessages([]);
     setIsProcessing(false);
+    setSessionId(null);
+  }, [sessionId, userId]);
 
-    const newId = generateSessionId();
-    setSessionId(newId);
-    saveSessionId(newId);
-  }, [sessionId]);
-
-  const validateSession = useCallback(async () => {
-    if (!sessionId) return;
+  const validateSession = useCallback(async (sid: string | null) => {
+    if (!sid) return;
     try {
-      const info = await getSession(sessionId);
+      const info = await getSession(sid);
       if (info.has_history) {
         try {
-          const history = await getHistory(sessionId);
+          const history = await getHistory(sid);
           if (history.messages.length > 0) {
             setMessages(history.messages.map((m) => ({
               role: m.role,
@@ -268,14 +278,45 @@ export function useChat() {
           // History fetch failed — start with empty view
         }
       } else {
-        const newId = generateSessionId();
-        setSessionId(newId);
-        saveSessionId(newId);
+        clearSessionId(userId);
+        setSessionId(null);
       }
     } catch {
       // Keep current session_id
     }
-  }, [sessionId]);
+  }, [userId]);
+
+  // Auto-validate session on mount or user change
+  const hasValidated = useRef(false);
+  useEffect(() => {
+    // Reset validation state on user change
+    hasValidated.current = false;
+    const savedId = loadSessionId(userId);
+    setSessionId(savedId);
+
+    if (savedId && !hasValidated.current) {
+      hasValidated.current = true;
+      getSession(savedId).then((info) => {
+        if (info.has_history) {
+          getHistory(savedId).then((history) => {
+            if (history.messages.length > 0) {
+              setMessages(history.messages.map((m) => ({
+                role: m.role,
+                content: m.content,
+                timestamp: m.timestamp,
+              })));
+            }
+          }).catch(() => {});
+        } else {
+          clearSessionId(userId);
+          setSessionId(null);
+        }
+      }).catch(() => {});
+    } else if (!savedId) {
+      // No saved session for this user — clear messages
+      setMessages([]);
+    }
+  }, [userId]);
 
   return {
     messages,

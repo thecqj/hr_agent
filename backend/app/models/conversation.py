@@ -2,20 +2,17 @@
 
 import uuid
 
-from sqlalchemy import String, Text, Boolean, Index
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import String, Text
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin
 
 
 class Conversation(Base, TimestampMixin):
-    """会话索引表 — 跨会话摘要/实体传递"""
+    """会话索引表 — 同一 session_id 内的摘要传递"""
 
     __tablename__ = "conversations"
-    __table_args__ = (
-        Index("ix_conversations_user_active", "user_id", "is_active"),
-    )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), nullable=False, index=True,
@@ -28,12 +25,4 @@ class Conversation(Base, TimestampMixin):
     summary: Mapped[str | None] = mapped_column(
         Text, nullable=True, default=None,
         comment="LLM 生成的会话摘要",
-    )
-    context_entities: Mapped[dict[str, object] | None] = mapped_column(
-        JSONB, nullable=True, default=None,
-        comment="结构化实体 {current_job_id, current_job_code, ...}",
-    )
-    is_active: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True,
-        comment="会话是否活跃",
     )

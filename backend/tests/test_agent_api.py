@@ -189,23 +189,3 @@ async def test_get_task_status_after_trigger(
     assert data["total_count"] == 3
 
 
-@pytest.mark.asyncio
-async def test_trigger_with_custom_quota(
-    client: AsyncClient,
-    recruiter_with_job: dict[str, Any],
-) -> None:
-    """触发评估时自定义面试人数上限"""
-    job_id = recruiter_with_job["job_id"]
-    recruiter_headers: dict[str, str] = recruiter_with_job["recruiter_headers"]
-
-    with patch(
-        "app.services.agent_service._run_workflow_background",
-        new_callable=AsyncMock,
-    ):
-        resp = await client.post(
-            f"/api/agent/evaluate/{job_id}",
-            json={"interview_quota": 5},
-            headers=recruiter_headers,
-        )
-
-    assert resp.status_code == 201

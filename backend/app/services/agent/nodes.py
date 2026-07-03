@@ -92,7 +92,6 @@ async def collect_node(state: EvaluationState) -> dict[str, Any]:
         "salary_max": job.salary_max,
         "location": job.location,
         "work_type": job.work_type.value,
-        "interview_quota": job.interview_quota,
     }
 
     # 构建申请列表
@@ -210,16 +209,15 @@ async def evaluate_node(state: EvaluationState) -> dict[str, Any]:
 
 
 async def screen_node(state: EvaluationState) -> dict[str, Any]:
-    """筛选阶段：按加权总分排序，取 Top N 进面（纯排序，无 LLM）"""
+    """筛选阶段：按固定阈值 60 分筛选（纯排序，无 LLM）"""
     evaluation_results = list(cast(list[dict[str, Any]], state.get("evaluation_results", [])))
-    job_info = cast(dict[str, Any], state.get("job_info", {}))
 
     if not evaluation_results:
         return {
             "screening_result": {
                 "recommend_list": [],
                 "reject_list": [],
-                "cutoff_score": 0.0,
+                "cutoff_score": 60.0,
             },
         }
 
@@ -232,18 +230,10 @@ async def screen_node(state: EvaluationState) -> dict[str, Any]:
         reverse=True,
     )
 
-    # 确定 cutoff（请求级别覆盖优先于岗位配置）
-    interview_quota = state.get("interview_quota_override") or job_info.get("interview_quota")
-
-    if interview_quota is not None:
-        quota = int(interview_quota)
-        recommend_list = sorted_results[:quota]
-        reject_list = sorted_results[quota:]
-        cutoff_score = float(recommend_list[-1].get("weighted_total", 0)) if recommend_list else 0.0
-    else:
-        recommend_list = [r for r in sorted_results if float(r.get("weighted_total", 0)) >= 60]
-        reject_list = [r for r in sorted_results if float(r.get("weighted_total", 0)) < 60]
-        cutoff_score = 60.0
+    # 固定阈值：ai_score >= 60 → recommend, < 60 → reject
+    cutoff_score = 60.0
+    recommend_list = [r for r in sorted_results if float(r.get("weighted_total", 0)) >= cutoff_score]
+    reject_list = [r for r in sorted_results if float(r.get("weighted_total", 0)) < cutoff_score]
 
     screening_result: dict[str, Any] = {
         "recommend_list": recommend_list,

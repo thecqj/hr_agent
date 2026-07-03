@@ -48,9 +48,6 @@ class BorderlineReview(BaseModel):
 class EvaluateRequest(BaseModel):
     """触发评估请求"""
 
-    interview_quota: Optional[int] = Field(
-        None, description="面试人数上限，null 表示不限（可覆盖岗位设定）"
-    )
 
 
 class EvaluateResponse(BaseModel):

@@ -4,7 +4,7 @@ create_react_agent 内部管理 messages 列表状态。
 此模块仅定义 context injection 所需的辅助类型。
 """
 
-from typing import Any, TypedDict
+from typing import TypedDict
 
 
 class ConversationContext(TypedDict, total=False):
@@ -15,4 +15,3 @@ class ConversationContext(TypedDict, total=False):
     """
 
     session_summary: str | None
-    context_entities: dict[str, Any]

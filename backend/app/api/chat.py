@@ -18,6 +18,9 @@ from app.schemas.chat import ChatRequest, SessionCloseRequest, SessionResponse, 
 
 router = APIRouter(prefix="/chat", tags=["对话助手"])
 
+# Summary 触发阈值：每 10 轮（20 条消息）触发一次滚动压缩
+_SUMMARY_MESSAGE_THRESHOLD = 20
+
 
 @router.post(
     "/send",
@@ -61,7 +64,7 @@ async def close_session(
     data: SessionCloseRequest,
     current_user: User = Depends(get_required_user),
 ) -> dict[str, str]:
-    """关闭会话，将 is_active 设为 False，触发摘要生成"""
+    """关闭会话 — 仅做资源清理，不触发摘要生成"""
     async with async_session() as db:
         stmt = select(Conversation).where(
             Conversation.session_id == data.session_id,
@@ -73,100 +76,48 @@ async def close_session(
         if not conversation:
             return {"message": "会话不存在"}
 
-        if not conversation.is_active:
-            return {"message": "会话已关闭"}
-
-        conversation.is_active = False
-
-        # Generate final summary from LangGraph checkpoint messages
-        from app.services.conversation.graph import build_conversation_graph
-
-        checkpointer = get_checkpointer()
-        graph = build_conversation_graph(checkpointer)
-        config: RunnableConfig = {
-            "configurable": {"thread_id": data.session_id}
-        }
-        try:
-            state_result = await graph.aget_state(config)
-            messages = state_result.values.get("messages", [])
-
-            # Generate summary only for substantial conversations
-            if len(messages) > 10:
-                from app.llm.deepseek import DeepSeekProvider
-
-                provider = None
-                try:
-                    provider = DeepSeekProvider()
-                    history_for_summary: list[dict[str, str]] = []
-                    for msg in messages:
-                        role = getattr(msg, "type", msg.get("type", ""))
-                        content = getattr(msg, "content", msg.get("content", ""))
-                        if role in ("user", "ai", "assistant", "human"):
-                            role_key = "user" if role in ("user", "human") else "assistant"
-                            history_for_summary.append({"role": role_key, "content": str(content)})
-
-                    if history_for_summary:
-                        summary = await provider.summarize_conversation(
-                            history_for_summary,
-                            existing_summary=conversation.summary,
-                        )
-                        if len(summary) > 500:
-                            summary = summary[:500]
-                        conversation.summary = summary
-                except Exception:
-                    pass  # Summary failure is non-blocking
-                finally:
-                    if provider is not None:
-                        await provider.close()
-
-            # Update context_entities if present in state
-            context_entities = state_result.values.get("context_entities")
-            if context_entities:
-                conversation.context_entities = context_entities
-        except Exception:
-            pass  # Checkpoint read failure is non-blocking
-
-        await db.commit()
+        # 不再设置 is_active = False
+        # 不再触发摘要生成（摘要已在对话中滚动生成）
+        # 保留 conversation 记录（用于历史查询）
 
     return {"message": "会话已关闭"}
 
 
 @router.get(
     "/session",
-    summary="查询当前活跃会话",
+    summary="查询会话",
 )
 async def get_session(
     session_id: str | None = Query(None, description="要检查的会话 ID"),
     current_user: User = Depends(get_required_user),
 ) -> SessionResponse:
-    """查询当前用户的活跃会话信息"""
+    """查询当前用户的会话信息 — 通过 session_id 判断是否存在历史"""
     async with async_session() as db:
         if session_id:
-            # Check specific session
+            # Check specific session by session_id
             stmt = select(Conversation).where(
                 Conversation.session_id == session_id,
                 Conversation.user_id == current_user.id,
             )
-        else:
-            # Find most recent active session
-            stmt = select(Conversation).where(
-                Conversation.user_id == current_user.id,
-                Conversation.is_active.is_(True),
-            ).order_by(Conversation.updated_at.desc()).limit(1)
+            result = await db.execute(stmt)
+            conversation = result.scalar_one_or_none()
 
-        result = await db.execute(stmt)
-        conversation = result.scalar_one_or_none()
+            if conversation:
+                return SessionResponse(
+                    session_id=conversation.session_id,
+                    has_history=True,
+                )
 
-        if conversation and conversation.is_active:
             return SessionResponse(
-                session_id=conversation.session_id,
-                has_history=True,
+                session_id=session_id,
+                has_history=False,
             )
-
-        return SessionResponse(
-            session_id=session_id or "",
-            has_history=False,
-        )
+        else:
+            # No session_id provided — no active session
+            return SessionResponse(
+                session_id="",
+                has_history=False,
+            )
 
 
 @router.get(
@@ -231,6 +182,18 @@ async def get_chat_history(
     return HistoryResponse(session_id=session_id, messages=history_messages)
 
 
+def _extract_history_from_messages(messages: list[Any]) -> list[dict[str, str]]:
+    """从 LangGraph messages 中提取 user/assistant 文本对话列表"""
+    history: list[dict[str, str]] = []
+    for msg in messages:
+        role = getattr(msg, "type", msg.get("type", ""))
+        content = getattr(msg, "content", msg.get("content", ""))
+        if role in ("user", "ai", "assistant", "human"):
+            role_key = "user" if role in ("user", "human") else "assistant"
+            history.append({"role": role_key, "content": str(content)})
+    return history
+
+
 async def _run_conversation_stream(
     message: str,
     user_id: str,
@@ -256,27 +219,11 @@ async def _run_conversation_stream(
             conversation = None
 
         if not conversation:
-            # New session — check for seed from previous session
-            seed_summary: str | None = None
-            seed_entities: dict[str, Any] | None = None
-
-            prev_stmt = select(Conversation).where(
-                Conversation.user_id == uuid.UUID(user_id),
-                Conversation.is_active.is_(False),
-            ).order_by(Conversation.updated_at.desc()).limit(1)
-            prev_result = await db.execute(prev_stmt)
-            prev_conversation = prev_result.scalar_one_or_none()
-
-            if prev_conversation:
-                seed_summary = prev_conversation.summary
-                seed_entities = prev_conversation.context_entities
-
+            # New session — no seed injection from previous sessions
             conversation = Conversation(
                 user_id=uuid.UUID(user_id),
                 session_id=session_id,
-                summary=seed_summary,
-                context_entities=seed_entities,
-                is_active=True,
+                summary=None,
             )
             db.add(conversation)
             await db.commit()
@@ -285,8 +232,6 @@ async def _run_conversation_stream(
     context: dict[str, Any] = {}
     if conversation.summary:
         context["session_summary"] = conversation.summary
-    if conversation.context_entities:
-        context["context_entities"] = conversation.context_entities
 
     # ── Emit session event first ─────────────────────────
     yield f"event: session\ndata: {json.dumps({'session_id': session_id}, ensure_ascii=False)}\n\n"
@@ -348,7 +293,7 @@ async def _run_conversation_stream(
                     if event_name == "progress":
                         yield f"event: progress\ndata: {json.dumps(event_data, ensure_ascii=False)}\n\n"
 
-            # Get final state for result event and context update
+            # Get final state for result event and summary update
             state_result = await graph.aget_state(config)
             messages = state_result.values.get("messages", [])
 
@@ -367,7 +312,7 @@ async def _run_conversation_stream(
                         break
 
             if not final_reply:
-                # Fallback: get last AI message with text content (relax tool_calls constraint)
+                # Fallback: get last AI message with text content
                 for msg in reversed(messages):
                     msg_type = getattr(msg, "type", msg.get("type", ""))
                     if msg_type not in ("ai", "assistant"):
@@ -377,13 +322,13 @@ async def _run_conversation_stream(
                         final_reply = content
                         break
 
-            # Always emit result event — fallback message if no reply found
+            # Always emit result event
             if not final_reply:
                 final_reply = "抱歉，我暂时无法回复，请重试。"
             yield f"event: result\ndata: {json.dumps({'reply_message': final_reply}, ensure_ascii=False)}\n\n"
 
-            # ── Update conversations table ────────────────────
-            if conversation:
+            # ── Rolling summary: every 10 turns (20 messages) ─────
+            if len(messages) >= _SUMMARY_MESSAGE_THRESHOLD and len(messages) % _SUMMARY_MESSAGE_THRESHOLD == 0 and conversation:
                 async with async_session() as update_db:
                     update_stmt = select(Conversation).where(
                         Conversation.session_id == session_id,
@@ -391,39 +336,30 @@ async def _run_conversation_stream(
                     update_result = await update_db.execute(update_stmt)
                     conv = update_result.scalar_one_or_none()
                     if conv:
-                        # History compression: if too many messages, generate summary
-                        if len(messages) > 20:
-                            from app.llm.deepseek import DeepSeekProvider
+                        # Rolling compression: old summary + all messages → new summary
+                        from app.llm.deepseek import DeepSeekProvider
 
-                            provider = None
-                            try:
-                                provider = DeepSeekProvider()
-                                history_for_summary: list[dict[str, str]] = []
-                                for msg in messages:
-                                    role = getattr(msg, "type", msg.get("type", ""))
-                                    content = getattr(msg, "content", msg.get("content", ""))
-                                    if role in ("user", "ai", "assistant", "human"):
-                                        role_key = "user" if role in ("user", "human") else "assistant"
-                                        history_for_summary.append({"role": role_key, "content": str(content)})
+                        provider = None
+                        try:
+                            provider = DeepSeekProvider()
 
-                                if history_for_summary:
-                                    new_summary = await provider.summarize_conversation(
-                                        history_for_summary,
-                                        existing_summary=conv.summary,
-                                    )
-                                    if len(new_summary) > 500:
-                                        new_summary = new_summary[:500]
-                                    conv.summary = new_summary
-                            except Exception:
-                                pass
-                            finally:
-                                if provider is not None:
-                                    await provider.close()
+                            # Extract history for summarization
+                            history_for_summary = _extract_history_from_messages(messages)
 
-                        # Update context_entities from final state
-                        context_entities = state_result.values.get("context_entities")
-                        if context_entities:
-                            conv.context_entities = context_entities
+                            if history_for_summary:
+                                new_summary = await provider.summarize_conversation(
+                                    history_for_summary,
+                                    existing_summary=conv.summary,
+                                )
+                                if len(new_summary) > 500:
+                                    new_summary = new_summary[:500]
+                                conv.summary = new_summary
+                        except Exception:
+                            # Summary failure: keep existing summary, don't overwrite with error
+                            pass
+                        finally:
+                            if provider is not None:
+                                await provider.close()
 
                         await update_db.commit()
 

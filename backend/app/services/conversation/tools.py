@@ -77,7 +77,7 @@ _JOBS_ALLOWED_FIELDS: frozenset[str] = frozenset({
     "job_code", "title", "status", "head_count", "applications_count",
     "description", "requirements", "skills_required",
     "salary_min", "salary_max", "location", "work_type",
-    "interview_quota", "recruiter_name",
+    "recruiter_name",
 })
 
 _APPLICATIONS_ALLOWED_GROUP_BY: frozenset[str] = frozenset({
@@ -115,7 +115,7 @@ async def query_jobs(
 
     fields 指定返回字段，默认: ["job_code", "title", "status", "head_count", "applications_count"]
     可选字段: description, requirements, skills_required, salary_min, salary_max,
-    location, work_type, interview_quota, recruiter_name
+    location, work_type, recruiter_name
 
     只返回当前用户有权限查看的岗位（招聘者只看自己的岗位）。
 
@@ -205,8 +205,6 @@ async def query_jobs(
                 item["location"] = j.location
             elif f == "work_type":
                 item["work_type"] = j.work_type.value
-            elif f == "interview_quota":
-                item["interview_quota"] = j.interview_quota
             elif f == "recruiter_name":
                 item["recruiter_name"] = j.recruiter.name if j.recruiter else None
 
@@ -494,7 +492,6 @@ async def query_evaluation(
 async def trigger_evaluation(
     job_code: str | None = None,
     job_title: str | None = None,
-    interview_quota: int | None = None,
 ) -> str:
     """对岗位触发 AI 简历评估。
 
@@ -507,7 +504,6 @@ async def trigger_evaluation(
     Args:
         job_code: 岗位编号（优先使用）
         job_title: 岗位名称（模糊匹配，job_code 优先）
-        interview_quota: 面试人数上限，覆盖岗位默认设置
     """
     db = _get_db()
     user_id = _get_user_id()
@@ -522,12 +518,6 @@ async def trigger_evaluation(
         return f"找到多个匹配的岗位，请指定岗位编号：\n{job_list}"
 
     job = resolved
-
-    # Override interview_quota if provided
-    if interview_quota is not None and job.interview_quota != interview_quota:
-        job.interview_quota = interview_quota
-        await db.commit()
-        await db.refresh(job)
 
     # Concurrency check
     existing_stmt = select(EvaluationTask).where(
@@ -583,7 +573,6 @@ async def trigger_evaluation(
         "triggered_by": user_id,
         "task_id": task_id_str,
         "errors": [],
-        "interview_quota_override": interview_quota if isinstance(interview_quota, int) else None,
     }
 
     config: RunnableConfig = {

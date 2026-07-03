@@ -44,8 +44,8 @@ def mock_db() -> AsyncMock:
 
 
 @pytest.mark.asyncio
-async def test_screen_node_with_quota() -> None:
-    """有面试人数上限时，取 Top N"""
+async def test_screen_node_fixed_threshold() -> None:
+    """Fixed threshold 60: weighted_total >= 60 → recommend, < 60 → reject"""
     state: EvaluationState = {
         "evaluation_results": [
             {"application_id": "a1", "weighted_total": 90, "suggestion": "recommend"},
@@ -53,16 +53,16 @@ async def test_screen_node_with_quota() -> None:
             {"application_id": "a3", "weighted_total": 70, "suggestion": "neutral"},
             {"application_id": "a4", "weighted_total": 50, "suggestion": "reject"},
         ],
-        "job_info": {"interview_quota": 2},
+        "job_info": {},
     }
 
     result = await screen_node(state)
 
     screening = cast(dict[str, Any], result["screening_result"])
-    assert len(screening["recommend_list"]) == 2
-    assert len(screening["reject_list"]) == 2
+    assert len(screening["recommend_list"]) == 3
+    assert len(screening["reject_list"]) == 1
     assert screening["recommend_list"][0]["application_id"] == "a1"
-    assert screening["cutoff_score"] == 80
+    assert screening["cutoff_score"] == 60.0
 
 
 @pytest.mark.asyncio
@@ -73,7 +73,7 @@ async def test_screen_node_without_quota() -> None:
             {"application_id": "a1", "weighted_total": 85, "suggestion": "recommend"},
             {"application_id": "a2", "weighted_total": 55, "suggestion": "reject"},
         ],
-        "job_info": {"interview_quota": None},
+        "job_info": {},
     }
 
     result = await screen_node(state)
@@ -97,7 +97,7 @@ async def test_screen_node_empty_results() -> None:
     screening = cast(dict[str, Any], result["screening_result"])
     assert screening["recommend_list"] == []
     assert screening["reject_list"] == []
-    assert screening["cutoff_score"] == 0.0
+    assert screening["cutoff_score"] == 60.0
 
 
 # ── evaluate_node 测试（Mock LLM）────────────────────────────

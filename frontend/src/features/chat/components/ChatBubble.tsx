@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState } from "react";
 import { MessageCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -15,15 +15,6 @@ export function ChatBubble() {
   } = useBubbleDrag();
 
   const chat = useChat();
-
-  // Validate session on first open
-  const hasValidated = useRef(false);
-  useEffect(() => {
-    if (isOpen && !hasValidated.current) {
-      hasValidated.current = true;
-      chat.validateSession();
-    }
-  }, [isOpen, chat.validateSession]);
 
   const didDrag = useRef(false);
   const pointerStartPos = useRef({ x: 0, y: 0 });

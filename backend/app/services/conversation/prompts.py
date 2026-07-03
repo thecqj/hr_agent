@@ -35,8 +35,7 @@ def build_state_modifier(state: dict[str, Any]) -> str:
     """根据对话状态动态构建 system prompt。
 
     Args:
-        state: ReAct agent state dict，包含可能存在的
-               session_summary 和 context_entities
+        state: ReAct agent state dict，包含可能存在的 session_summary
 
     Returns:
         完整的 system prompt 字符串
@@ -47,25 +46,22 @@ def build_state_modifier(state: dict[str, Any]) -> str:
     if session_summary:
         parts.append(f"\n## 对话摘要\n{session_summary}")
 
-    context_entities: dict[str, Any] | None = state.get("context_entities")
-    if context_entities:
-        lines = [f"- {k}: {v}" for k, v in context_entities.items() if v]
-        if lines:
-            parts.append("\n## 当前对话上下文\n" + "\n".join(lines))
-
     return "\n".join(parts)
 
 
 # ── Conversation Summarization Prompts ─────────────────────
 
 
-SUMMARIZE_SYSTEM_PROMPT = """你是对话摘要助手。你的任务是根据对话历史和已有摘要，生成简洁准确的对话摘要。
+SUMMARIZE_SYSTEM_PROMPT = """你是对话摘要助手。根据对话历史和已有摘要，生成简洁准确的对话摘要。
 
 要求：
-1. 保留关键实体信息（人名、岗位编号、公司等）
+1. 保留关键实体：人名、岗位编号（J 开头的代码）、公司名、AI 评分等具体信息
 2. 保留用户的意图和尚未完成的请求
-3. 摘要应简洁，不超过 300 字
-4. 以 JSON 格式输出：{"summary": "摘要内容"}
+3. 保留 AI 的关键建议或结论
+4. 删除寒暄、重复、无关细节
+5. 摘要不超过 300 字
+6. 以 JSON 格式输出：{"summary": "摘要内容"}
+7. 如果已有摘要，将旧摘要与新对话内容合并为一个更完整的摘要
 """
 
 
@@ -86,7 +82,7 @@ def build_summarize_user_prompt(
 
     if existing_summary:
         parts.append(f"已有摘要：\n{existing_summary}\n")
-        parts.append("请根据已有摘要和新的对话内容，更新摘要。")
+        parts.append("请根据已有摘要和新的对话内容，合并更新摘要。")
 
     parts.append("对话历史：")
     for msg in history:
@@ -94,5 +90,5 @@ def build_summarize_user_prompt(
         content = msg.get("content", "")
         parts.append(f"{role}: {content}")
 
-    parts.append("\n请生成对话摘要，以 JSON 格式输出：{\"summary\": \"摘要内容\"}")
+    parts.append('\n请生成对话摘要，以 JSON 格式输出：{"summary": "摘要内容"}')
     return "\n".join(parts)

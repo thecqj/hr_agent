@@ -143,8 +143,8 @@ export function ChatWindow({
             <DialogTitle>关闭对话</DialogTitle>
             <DialogDescription>
               {isProcessing
-                ? "对话正在进行中，关闭将中断当前操作。AI 仍会记住之前讨论的内容。确定关闭吗？"
-                : "关闭将清空当前对话记录，AI 仍会记住之前讨论的内容。确定关闭吗？"}
+                ? "对话正在进行中，关闭将中断当前操作并清空对话记录。确定关闭吗？"
+                : "关闭将清空当前对话记录，下次打开将开始全新对话。确定关闭吗？"}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

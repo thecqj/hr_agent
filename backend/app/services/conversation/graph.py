@@ -45,7 +45,7 @@ def build_conversation_graph(
     Args:
         checkpointer: LangGraph PostgreSQL 持久化存储
         context: 可选的上下文字典，注入到 system prompt
-                 (session_summary, context_entities)
+                 (session_summary)
 
     Returns:
         编译后的 ReAct agent 图

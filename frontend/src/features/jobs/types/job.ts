@@ -18,7 +18,6 @@ export interface Job {
   recruiter_name?: string;
   applications_count?: number;
   job_code: string;              // 岗位编号
-  interview_quota: number;       // 进面人数
   head_count: number;            // 招聘人数
 }
 
@@ -48,6 +47,5 @@ export interface CreateJobPayload {
   salary_min?: number;
   salary_max?: number;
   skills_required: string[];
-  interview_quota?: number;      // 新增
   head_count?: number;           // 新增
 }
