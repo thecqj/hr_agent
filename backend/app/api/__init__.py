@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api import auth, jobs, applications, agent, chat
+from app.api import auth, jobs, applications, agent, chat, resumes
 
 api_router = APIRouter(prefix="/api")
 
@@ -8,3 +8,4 @@ api_router.include_router(jobs.router)
 api_router.include_router(applications.router)
 api_router.include_router(agent.router)
 api_router.include_router(chat.router)
+api_router.include_router(resumes.router)
