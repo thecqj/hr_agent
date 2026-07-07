@@ -10,6 +10,7 @@ import JobMarketPage from "@/pages/JobMarketPage";
 import LoginPage from "@/pages/LoginPage";
 import RegisterPage from "@/pages/RegisterPage";
 import MyApplicationsPage from "@/pages/MyApplicationsPage";
+import ProfilePage from "@/pages/ProfilePage";
 import PostJobPage from "@/pages/PostJobPage";
 import RecruiterLayout from "@/shared/ui/layout/RecruiterLayout";
 import SeekerLayout from "@/shared/ui/layout/SeekerLayout";
@@ -57,6 +58,14 @@ export default function App() {
             element={
               <ProtectedRoute role="job_seeker">
                 <MyApplicationsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute role="job_seeker">
+                <ProfilePage />
               </ProtectedRoute>
             }
           />

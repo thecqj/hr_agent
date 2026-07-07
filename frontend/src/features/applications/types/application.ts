@@ -11,7 +11,7 @@ export interface WorkExperience {
   company: string;
   position: string;
   start_date: string;
-  end_date?: string;
+  end_date?: string | null;
   description: string;
 }
 
@@ -19,7 +19,7 @@ export interface ProjectExperience {
   name: string;
   role: string;
   start_date: string;
-  end_date?: string;
+  end_date?: string | null;
   description: string;
   technologies: string[];
 }
@@ -29,12 +29,12 @@ export interface Education {
   major: string;
   degree: string;
   start_date: string;
-  end_date?: string;
+  end_date?: string | null;
 }
 
 export interface Certificate {
   name: string;
-  date?: string;
+  date?: string | null;
 }
 
 export interface DimensionScore {
@@ -56,14 +56,14 @@ export interface EvaluationDetail {
 export interface StructuredResume {
   name: string;
   work_experience_years: number;
-  education_level?: string;
-  contact: Contact;
+  education_level?: string | null;
+  contact?: Contact | null;
   work_experience: WorkExperience[];
   project_experience: ProjectExperience[];
   education: Education[];
   certificates: Certificate[];
   skills: string[];
-  self_evaluation?: string;
+  self_evaluation?: string | null;
 }
 
 export interface Applicant {
@@ -101,8 +101,8 @@ export interface PaginatedResponse<T> {
 }
 
 export interface CreateApplicationPayload {
-  job_id?: string;
+  job_id: string;
   resume_text: string;
-  structured_resume: StructuredResume;
+  structured_resume?: StructuredResume;
   cover_letter?: string;
 }
