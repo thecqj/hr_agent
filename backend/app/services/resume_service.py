@@ -9,7 +9,12 @@ ALLOWED_CONTENT_TYPES: set[str] = {
     "application/pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "text/plain",
+    "application/octet-stream",
 }
+
+# File signature magic bytes for type detection
+PDF_MAGIC = b"%PDF"
+DOCX_MAGIC = b"PK\x03\x04"
 
 MAX_FILE_SIZE: int = 10 * 1024 * 1024  # 10MB
 
@@ -62,18 +67,23 @@ async def extract_text(file_bytes: bytes, content_type: str) -> str:
         )
 
 
+def _detect_file_type(file_bytes: bytes, content_type: str) -> str | None:
+    """通过 magic bytes 检测文件真实类型，兜底使用 content_type"""
+    if content_type in ("application/pdf",) or file_bytes.startswith(PDF_MAGIC):
+        return "application/pdf"
+    if content_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" or file_bytes.startswith(DOCX_MAGIC):
+        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    if content_type in ("text/plain", "application/octet-stream"):
+        return "text/plain"
+    return None
+
+
 async def parse_resume_file(file: UploadFile) -> tuple[bytes, str, dict[str, object]]:
     """上传并解析简历文件，返回 (file_bytes, parsed_text, structured_data)
 
     NOTE: 此函数会消耗 file 流，调用方不应再读取 file。
     """
-    # 验证文件类型
     content_type = file.content_type or "application/octet-stream"
-    if content_type not in ALLOWED_CONTENT_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"不支持的文件类型: {content_type}，仅支持 PDF、DOCX、TXT",
-        )
 
     # 读取文件内容（一次性消耗流）
     file_bytes = await file.read()
@@ -88,9 +98,17 @@ async def parse_resume_file(file: UploadFile) -> tuple[bytes, str, dict[str, obj
             detail=f"文件大小超过限制（最大 {MAX_FILE_SIZE // (1024 * 1024)}MB）",
         )
 
+    # 通过文件内容（magic bytes）检测真实类型
+    detected_type = _detect_file_type(file_bytes, content_type)
+    if detected_type is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"不支持的文件类型，仅支持 PDF、DOCX、TXT",
+        )
+
     # 提取文本
     try:
-        parsed_text = await extract_text(file_bytes, content_type)
+        parsed_text = await extract_text(file_bytes, detected_type)
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
