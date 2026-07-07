@@ -20,6 +20,7 @@ import app.models.job  # noqa: F401
 import app.models.application  # noqa: F401
 import app.models.conversation  # noqa: F401
 import app.models.evaluation_task  # noqa: F401
+import app.models.resume  # noqa: F401
 
 # target_metadata 指向所有模型的元数据
 target_metadata = Base.metadata

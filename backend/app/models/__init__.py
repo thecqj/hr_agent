@@ -6,6 +6,7 @@ from app.models.job import Job, WorkType, JobStatus
 from app.models.application import Application, ApplicationStatus
 from app.models.evaluation_task import EvaluationTask, EvalTaskStatus
 from app.models.conversation import Conversation
+from app.models.resume import Resume
 
 __all__ = [
     "Base",
@@ -22,4 +23,5 @@ __all__ = [
     "EvaluationTask",
     "EvalTaskStatus",
     "Conversation",
+    "Resume",
 ]

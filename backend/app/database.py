@@ -17,6 +17,7 @@ import app.models.job  # noqa: F401
 import app.models.recruiter_profile  # noqa: F401
 import app.models.seeker_profile  # noqa: F401
 import app.models.user  # noqa: F401
+import app.models.resume  # noqa: F401
 
 
 engine = create_async_engine(

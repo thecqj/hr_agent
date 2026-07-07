@@ -45,6 +45,11 @@ class User(Base, TimestampMixin):
         back_populates="applicant",
         foreign_keys="Application.applicant_id",
     )
+    resumes: Mapped[list["Resume"]] = relationship(
+        "Resume",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
     jobs: Mapped[list["Job"]] = relationship(
         "Job",
         back_populates="recruiter",
@@ -61,3 +66,4 @@ if TYPE_CHECKING:
     from app.models.recruiter_profile import RecruiterProfile
     from app.models.application import Application
     from app.models.job import Job
+    from app.models.resume import Resume
