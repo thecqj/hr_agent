@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy import func, select
@@ -106,7 +106,7 @@ async def download_resume(
     resume_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_required_user),
-) -> dict:
+) -> dict[str, Any]:
     """下载简历文件（返回文件数据的 Base64 编码）。"""
     resume = await db.get(Resume, resume_id)
     if not resume:
