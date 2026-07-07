@@ -11,8 +11,8 @@ class ResumeListItem(BaseModel):
     """简历列表项（不含文件数据和结构化数据）"""
     id: str
     name: str
-    file_name: str
-    file_type: str
+    file_name: Optional[str] = None
+    file_type: Optional[str] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -27,8 +27,8 @@ class ResumeResponse(BaseModel):
     id: str
     user_id: str
     name: str
-    file_name: str
-    file_type: str
+    file_name: Optional[str] = None
+    file_type: Optional[str] = None
     parsed_text: Optional[str] = None
     structured_data: Optional[dict[str, Any]] = None
     created_at: datetime

@@ -113,6 +113,7 @@ async def download_resume(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权访问此简历")
 
     import base64
+    assert resume.file_data is not None
     file_data_b64 = base64.b64encode(resume.file_data).decode("utf-8")
 
     return {

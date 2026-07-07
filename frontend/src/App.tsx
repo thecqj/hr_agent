@@ -11,6 +11,7 @@ import LoginPage from "@/pages/LoginPage";
 import RegisterPage from "@/pages/RegisterPage";
 import MyApplicationsPage from "@/pages/MyApplicationsPage";
 import ProfilePage from "@/pages/ProfilePage";
+import CreateResumePage from "@/pages/CreateResumePage";
 import PostJobPage from "@/pages/PostJobPage";
 import RecruiterLayout from "@/shared/ui/layout/RecruiterLayout";
 import SeekerLayout from "@/shared/ui/layout/SeekerLayout";
@@ -66,6 +67,14 @@ export default function App() {
             element={
               <ProtectedRoute role="job_seeker">
                 <ProfilePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/profile/create"
+            element={
+              <ProtectedRoute role="job_seeker">
+                <CreateResumePage />
               </ProtectedRoute>
             }
           />
