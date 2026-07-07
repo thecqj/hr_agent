@@ -45,6 +45,18 @@ class BaseLLMProvider(ABC):
         ...
 
     @abstractmethod
+    async def parse_resume(self, raw_text: str) -> dict[str, object]:
+        """解析原始简历文本，返回结构化数据
+
+        Args:
+            raw_text: 原始简历文本内容
+
+        Returns:
+            结构化的简历数据字典
+        """
+        ...
+
+    @abstractmethod
     async def close(self) -> None:
         """关闭提供商资源（如 HTTP 客户端）"""
         ...
