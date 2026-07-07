@@ -62,8 +62,11 @@ async def extract_text(file_bytes: bytes, content_type: str) -> str:
         )
 
 
-async def parse_resume_file(file: UploadFile) -> tuple[str, dict[str, object]]:
-    """上传并解析简历文件，返回 (parsed_text, structured_data)"""
+async def parse_resume_file(file: UploadFile) -> tuple[bytes, str, dict[str, object]]:
+    """上传并解析简历文件，返回 (file_bytes, parsed_text, structured_data)
+
+    NOTE: 此函数会消耗 file 流，调用方不应再读取 file。
+    """
     # 验证文件类型
     content_type = file.content_type or "application/octet-stream"
     if content_type not in ALLOWED_CONTENT_TYPES:
@@ -72,7 +75,7 @@ async def parse_resume_file(file: UploadFile) -> tuple[str, dict[str, object]]:
             detail=f"不支持的文件类型: {content_type}，仅支持 PDF、DOCX、TXT",
         )
 
-    # 读取文件内容
+    # 读取文件内容（一次性消耗流）
     file_bytes = await file.read()
     if not file_bytes:
         raise HTTPException(
@@ -110,4 +113,4 @@ async def parse_resume_file(file: UploadFile) -> tuple[str, dict[str, object]]:
             detail=f"简历解析失败: {exc}",
         )
 
-    return parsed_text, structured_data
+    return file_bytes, parsed_text, structured_data

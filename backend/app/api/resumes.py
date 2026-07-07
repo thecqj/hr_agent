@@ -30,7 +30,7 @@ async def parse_resume(
     current_user: User = Depends(get_required_user),
 ) -> ParseResumeResponse:
     """上传简历文件并解析为结构化数据，不保存到简历库。用于投递页面自动填充表单。"""
-    parsed_text, structured_data = await parse_resume_file(file)
+    _, parsed_text, structured_data = await parse_resume_file(file)
     return ParseResumeResponse(
         parsed_text=parsed_text,
         structured_data=StructuredResume.model_validate(structured_data),
@@ -45,9 +45,7 @@ async def create_resume(
     current_user: User = Depends(get_required_user),
 ) -> ResumeResponse:
     """上传简历文件，解析并保存到用户的简历库。"""
-    parsed_text, structured_data = await parse_resume_file(file)
-
-    file_bytes = await file.read()
+    file_bytes, parsed_text, structured_data = await parse_resume_file(file)
     resume = Resume(
         user_id=current_user.id,
         name=name,
