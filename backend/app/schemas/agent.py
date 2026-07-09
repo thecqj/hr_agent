@@ -47,6 +47,10 @@ class BorderlineReview(BaseModel):
 
 class EvaluateRequest(BaseModel):
     """触发评估请求"""
+    mode: Literal["new_only", "all"] = Field(
+        "new_only",
+        description="评估模式: new_only=仅评估新投递, all=重新评估全部",
+    )
 
 
 
@@ -68,6 +72,7 @@ class TaskStatusResponse(BaseModel):
     task_id: str
     job_id: str
     status: EvalTaskStatus
+    mode: str = "new_only"
     total_count: int = 0
     evaluated_count: int = 0
     result_summary: Optional[dict[str, Any]] = None
@@ -106,3 +111,25 @@ class ConfirmResponse(BaseModel):
 
     updated_count: int
     message: str
+
+
+class JobTaskItem(BaseModel):
+    """岗位评估任务项"""
+
+    task_id: str
+    status: EvalTaskStatus
+    mode: str = "new_only"
+    total_count: int = 0
+    evaluated_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+    @field_serializer("task_id")
+    def serialize_uuid(self, value: uuid.UUID | str, _info: Any) -> str:
+        return str(value)
+
+
+class JobEvaluationTasksResponse(BaseModel):
+    """岗位评估任务列表响应"""
+
+    tasks: list[JobTaskItem]

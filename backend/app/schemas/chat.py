@@ -193,3 +193,15 @@ class SessionEvent(BaseModel):
     """SSE session 事件"""
 
     session_id: str = Field(..., description="会话 ID")
+
+
+class ClearSessionRequest(BaseModel):
+    """清空会话请求"""
+
+    session_id: str = Field(..., description="要清空的会话 ID")
+
+
+class ClearSessionResponse(BaseModel):
+    """清空会话响应"""
+
+    message: str = Field(..., description="操作结果消息")

@@ -68,12 +68,21 @@ async def trigger_evaluation(
             detail="该岗位已有正在进行的评估任务",
         )
 
-    # 统计 pending 申请数
+    # 根据 mode 统计申请数
+    mode = getattr(request, "mode", "new_only")
     count_stmt = select(Application).where(
         Application.job_id == job_uuid,
-        Application.status == ApplicationStatus.PENDING,
     )
-    pending_count = len(list((await db.execute(count_stmt)).scalars().all()))
+    if mode == "new_only":
+        count_stmt = count_stmt.where(Application.ai_decision.is_(None))
+    all_apps = list((await db.execute(count_stmt)).scalars().all())
+    total_count = len(all_apps)
+
+    if mode == "new_only" and total_count == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="没有新的简历投递，无需触发评估",
+        )
 
     # 创建评估任务
     task_id = uuid.uuid4()
@@ -82,7 +91,8 @@ async def trigger_evaluation(
         job_id=job_uuid,
         triggered_by=current_user.id,
         status=EvalTaskStatus.PENDING,
-        total_count=pending_count,
+        mode=mode,
+        total_count=total_count,
     )
     db.add(eval_task)
     await db.commit()
@@ -98,8 +108,108 @@ async def trigger_evaluation(
     return EvaluateResponse(
         task_id=str(task_id),
         status="pending",
-        total_count=pending_count,
+        total_count=total_count,
     )
+
+
+async def get_job_tasks(
+    db: AsyncSession,
+    job_id: str,
+    current_user: User,
+) -> Any:
+    """获取岗位的评估任务列表"""
+    from app.schemas.agent import JobEvaluationTasksResponse, JobTaskItem
+
+    # 校验岗位权限
+    job = await db.get(Job, job_id)
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="岗位不存在")
+    if job.recruiter_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权查看此岗位")
+
+    stmt = (
+        select(EvaluationTask)
+        .where(EvaluationTask.job_id == uuid.UUID(job_id))
+        .order_by(EvaluationTask.created_at.desc())
+    )
+    tasks = list((await db.execute(stmt)).scalars().all())
+
+    items = [
+        JobTaskItem(
+            task_id=str(t.id),
+            status=t.status,
+            mode=t.mode,
+            total_count=t.total_count,
+            evaluated_count=t.evaluated_count,
+            created_at=t.created_at,
+            updated_at=t.updated_at,
+        )
+        for t in tasks
+    ]
+    return JobEvaluationTasksResponse(tasks=items)
+
+
+async def export_evaluation_to_excel(
+    db: AsyncSession,
+    task_id: str,
+    current_user: User,
+) -> bytes:
+    """导出评估结果为 Excel 文件"""
+    from io import BytesIO
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill
+
+    task = await db.get(EvaluationTask, task_id)
+    if not task:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="评估任务不存在")
+    if task.triggered_by != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权导出此任务")
+
+    result_summary = task.result_summary or {}
+    details = result_summary.get("evaluation_details", [])
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    assert ws is not None, "工作表创建失败"
+    ws.title = "评估结果"
+
+    # Header style
+    header_font = Font(bold=True, size=11)
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    header_font_white = Font(bold=True, size=11, color="FFFFFF")
+
+    # Headers
+    headers = ["序号", "姓名", "AI 总分", "AI 决策", "技能匹配", "经验相关性", "学历达标", "综合印象", "决策理由"]
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=h)
+        cell.font = header_font_white
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center")
+
+    # Data rows
+    for i, detail in enumerate(details, 1):
+        dims = {}
+        for dim in detail.get("ai_evaluation", []):
+            dims[dim.get("name", "")] = dim.get("score", 0)
+
+        ws.cell(row=i + 1, column=1, value=i).alignment = Alignment(horizontal="center")
+        ws.cell(row=i + 1, column=2, value=detail.get("applicant_name", ""))
+        ws.cell(row=i + 1, column=3, value=detail.get("ai_score", 0))
+        ws.cell(row=i + 1, column=4, value="推荐" if detail.get("ai_decision") == "recommend" else "淘汰")
+        ws.cell(row=i + 1, column=5, value=dims.get("技能匹配", ""))
+        ws.cell(row=i + 1, column=6, value=dims.get("经验相关性", ""))
+        ws.cell(row=i + 1, column=7, value=dims.get("学历达标", ""))
+        ws.cell(row=i + 1, column=8, value=dims.get("综合印象", ""))
+        ws.cell(row=i + 1, column=9, value=detail.get("ai_decision_reason", ""))
+
+    # Auto-adjust column widths
+    for col in range(1, len(headers) + 1):
+        ws.column_dimensions[chr(64 + col)].width = max(15, len(str(headers[col - 1])) + 4)
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.read()
 
 
 async def _run_workflow_background(
@@ -113,10 +223,15 @@ async def _run_workflow_background(
 
     async with async_session() as db:
         try:
+            # 从数据库读取任务的 mode
+            task = await db.get(EvaluationTask, task_id)
+            mode = task.mode if task else "new_only"
+
             initial_state: EvaluationState = {
                 "job_id": job_id,
                 "triggered_by": triggered_by,
                 "task_id": task_id,
+                "mode": mode,
                 "errors": [],
             }
             await run_evaluation_workflow(initial_state, db)

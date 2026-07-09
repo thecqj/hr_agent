@@ -26,6 +26,9 @@ httpx
 PyPDF2
 python-docx
 
+# Excel export
+openpyxl
+
 # Workflow
 langgraph
 langchain-core

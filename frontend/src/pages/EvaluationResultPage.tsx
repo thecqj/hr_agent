@@ -6,7 +6,9 @@ import {
   CheckCircle,
   ChevronDown,
   ChevronRight,
+  Download,
   Loader2,
+  Sparkles,
   XCircle,
 } from "lucide-react";
 
@@ -32,13 +34,16 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   useEvaluationTaskQuery,
   useConfirmEvaluationMutation,
+  useTriggerEvaluationMutation,
 } from "@/features/applications/hooks/useApplications";
 import { useJobDetailQuery } from "@/features/jobs/hooks/useJobs";
 import { getApiErrorMessage } from "@/shared/api/error";
 import ErrorState from "@/shared/ui/feedback/ErrorState";
 import { useBreadcrumb } from "@/shared/ui/layout/breadcrumb-context";
 import type { ConfirmDecision } from "@/features/applications/api/applications";
+import { exportEvaluation } from "@/features/applications/api/applications";
 import type { EvaluationDetail } from "@/features/applications/types/application";
+import EvaluationTriggerDialog from "@/features/applications/components/EvaluationTriggerDialog";
 
 interface DecisionOverride {
   applicationId: string;
@@ -63,6 +68,8 @@ export default function EvaluationResultPage() {
   } = useEvaluationTaskQuery(taskId);
   const { data: job } = useJobDetailQuery(task?.job_id);
   const confirmMutation = useConfirmEvaluationMutation();
+  const triggerEvalMutation = useTriggerEvaluationMutation();
+  const [showEvalDialog, setShowEvalDialog] = useState(false);
 
   useEffect(() => {
     setBreadcrumbItems([
@@ -119,6 +126,22 @@ export default function EvaluationResultPage() {
     });
   };
 
+  const handleExportExcel = async () => {
+    if (!taskId) return;
+    try {
+      const blob = await exportEvaluation(taskId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `评估结果_${taskId.slice(0, 8)}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("导出成功");
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "导出失败"));
+    }
+  };
+
   const handleConfirm = async () => {
     if (!taskId) return;
 
@@ -139,6 +162,21 @@ export default function EvaluationResultPage() {
       }
     } catch (err) {
       toast.error(getApiErrorMessage(err, "确认失败"));
+    }
+  };
+
+  const handleTriggerEval = async (mode: "new_only" | "all") => {
+    if (!task?.job_id) return;
+    try {
+      const result = await triggerEvalMutation.mutateAsync({
+        jobId: task.job_id,
+        payload: { mode },
+      });
+      setShowEvalDialog(false);
+      toast.success(`评估已启动，共 ${result.total_count} 份简历待评估`);
+      navigate(`/dashboard/evaluation/${result.task_id}`);
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "触发评估失败"));
     }
   };
 
@@ -196,10 +234,22 @@ export default function EvaluationResultPage() {
             {"任务 ID: "} {taskId}
           </p>
         </div>
-        <Button variant="outline" onClick={() => navigate(-1)}>
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          {"返回"}
-        </Button>
+        <div className="flex gap-2">
+          {task?.job_id && (
+            <Button variant="outline" onClick={() => setShowEvalDialog(true)}>
+              <Sparkles className="h-4 w-4 mr-2" />
+              触发新评估
+            </Button>
+          )}
+          <Button variant="outline" onClick={handleExportExcel}>
+            <Download className="h-4 w-4 mr-2" />
+            导出 Excel
+          </Button>
+          <Button variant="outline" onClick={() => navigate(-1)}>
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            返回
+          </Button>
+        </div>
       </div>
 
       {/* Summary cards */}
@@ -207,7 +257,7 @@ export default function EvaluationResultPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              {"总评估数"}
+              总评估数
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -413,6 +463,14 @@ export default function EvaluationResultPage() {
           )}
         </Button>
       </div>
+
+      {/* Evaluation trigger dialog */}
+      <EvaluationTriggerDialog
+        open={showEvalDialog}
+        onOpenChange={setShowEvalDialog}
+        jobTitle={job?.title ?? "该岗位"}
+        onConfirm={handleTriggerEval}
+      />
     </div>
   );
 }

@@ -6,6 +6,7 @@ import ApplyPage from "@/pages/ApplyPage";
 import EvaluationResultPage from "@/pages/EvaluationResultPage";
 import JobDashboardPage from "@/pages/JobDashboardPage";
 import JobDetailPage from "@/pages/JobDetailPage";
+import JobEvaluationPage from "@/pages/JobEvaluationPage";
 import JobMarketPage from "@/pages/JobMarketPage";
 import LoginPage from "@/pages/LoginPage";
 import RegisterPage from "@/pages/RegisterPage";
@@ -103,6 +104,14 @@ export default function App() {
             element={
               <ProtectedRoute role="recruiter">
                 <ApplicantsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dashboard/evaluation/job/:jobId"
+            element={
+              <ProtectedRoute role="recruiter">
+                <JobEvaluationPage />
               </ProtectedRoute>
             }
           />

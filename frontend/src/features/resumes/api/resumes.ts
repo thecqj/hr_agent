@@ -76,6 +76,14 @@ export async function updateResumeName(id: string, name: string): Promise<Resume
   return res.data;
 }
 
+export async function updateResumeData(
+  id: string,
+  data: { name: string; parsed_text?: string; structured_data?: StructuredResume }
+): Promise<ResumeResponse> {
+  const res = await apiClient.put<ResumeResponse>(`/resumes/${id}/data`, data);
+  return res.data;
+}
+
 export async function deleteResume(id: string): Promise<void> {
   await apiClient.delete(`/resumes/${id}`);
 }

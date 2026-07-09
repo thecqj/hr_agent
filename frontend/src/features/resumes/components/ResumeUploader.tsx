@@ -1,9 +1,11 @@
 import { useCallback, useRef, useState } from "react";
-import { FileUp, Loader2, CheckCircle2, AlertCircle, X } from "lucide-react";
+import { FileUp, Loader2, CheckCircle2, AlertCircle, X, Library } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { useParseResumeMutation, useResumeListQuery } from "@/features/resumes/hooks/useResumes";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useParseResumeMutation } from "@/features/resumes/hooks/useResumes";
+import ResumeLibraryTable from "@/features/resumes/components/ResumeLibraryTable";
 import type { ParseResumeResponse } from "@/features/resumes/api/resumes";
 import { cn } from "@/lib/utils";
 
@@ -22,10 +24,10 @@ export default function ResumeUploader({ onParsed, onReset }: ResumeUploaderProp
   const [fileName, setFileName] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [isDragOver, setIsDragOver] = useState(false);
+  const [activeTab, setActiveTab] = useState("upload");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const parseMutation = useParseResumeMutation();
-  const { data: resumeList } = useResumeListQuery();
 
   const handleFile = useCallback(async (file: File) => {
     // Validate type
@@ -81,7 +83,6 @@ export default function ResumeUploader({ onParsed, onReset }: ResumeUploaderProp
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) handleFile(file);
-    // Reset input so same file can be re-selected
     e.target.value = "";
   };
 
@@ -91,6 +92,12 @@ export default function ResumeUploader({ onParsed, onReset }: ResumeUploaderProp
     setErrorMessage("");
     onReset?.();
   };
+
+  const handleLibrarySelect = useCallback((data: ParseResumeResponse) => {
+    setFileName("从简历库选择");
+    setStatus("parsed");
+    onParsed(data);
+  }, [onParsed]);
 
   // Parsed state
   if (status === "parsed") {
@@ -116,91 +123,74 @@ export default function ResumeUploader({ onParsed, onReset }: ResumeUploaderProp
 
   return (
     <div className="space-y-4">
-      {/* Drag & drop zone */}
-      <div
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onClick={handleClick}
-        className={cn(
-          "border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors",
-          "hover:border-primary hover:bg-primary/5",
-          isDragOver && "border-primary bg-primary/10",
-          status === "error" && "border-destructive bg-destructive/5",
-          status === "uploading" && "border-muted-foreground/30 pointer-events-none opacity-70",
-        )}
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={ACCEPTED_TYPES}
-          className="hidden"
-          onChange={handleFileChange}
-        />
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="upload">
+            <FileUp className="h-4 w-4 mr-1" />
+            上传文件
+          </TabsTrigger>
+          <TabsTrigger value="library">
+            <Library className="h-4 w-4 mr-1" />
+            从简历库选择
+          </TabsTrigger>
+        </TabsList>
 
-        {status === "uploading" ? (
-          <div className="flex flex-col items-center gap-2">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="text-sm text-muted-foreground">正在解析简历...</p>
-            <p className="text-xs text-muted-foreground">{fileName}</p>
-          </div>
-        ) : status === "error" ? (
-          <div className="flex flex-col items-center gap-2">
-            <AlertCircle className="h-8 w-8 text-destructive" />
-            <p className="text-sm font-medium text-destructive">解析失败</p>
-            <p className="text-xs text-muted-foreground">{errorMessage}</p>
-            <Button variant="outline" size="sm" className="mt-2" onClick={(e) => { e.stopPropagation(); handleReset(); }}>
-              重新上传
-            </Button>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center gap-2">
-            <FileUp className="h-8 w-8 text-muted-foreground" />
-            <p className="text-sm font-medium">
-              拖拽简历文件到此处，或<span className="text-primary">点击选择文件</span>
-            </p>
-            <p className="text-xs text-muted-foreground">
-              支持 PDF、DOCX、TXT 格式，最大 10MB
-            </p>
-          </div>
-        )}
-      </div>
+        <TabsContent value="upload">
+          {/* Drag & drop zone */}
+          <div
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onClick={handleClick}
+            className={cn(
+              "border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors",
+              "hover:border-primary hover:bg-primary/5",
+              isDragOver && "border-primary bg-primary/10",
+              status === "error" && "border-destructive bg-destructive/5",
+              status === "uploading" && "border-muted-foreground/30 pointer-events-none opacity-70",
+            )}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={ACCEPTED_TYPES}
+              className="hidden"
+              onChange={handleFileChange}
+            />
 
-      {/* Resume library selector */}
-      {resumeList && resumeList.items.length > 0 && (
-        <div className="text-center">
-          <span className="text-xs text-muted-foreground">或</span>
-          <div className="mt-2 flex flex-wrap gap-2 justify-center">
-            {resumeList.items.map((resume) => (
-              <Button
-                key={resume.id}
-                variant="outline"
-                size="sm"
-                onClick={async () => {
-                  setStatus("uploading");
-                  setFileName(resume.file_name);
-                  try {
-                    const { getResumeDetail } = await import("@/features/resumes/api/resumes");
-                    const detail = await getResumeDetail(resume.id);
-                    if (detail.structured_data) {
-                      setStatus("parsed");
-                      onParsed({
-                        parsed_text: detail.parsed_text || "",
-                        structured_data: detail.structured_data,
-                      });
-                    }
-                  } catch {
-                    setStatus("error");
-                    setErrorMessage("加载简历失败");
-                  }
-                }}
-              >
-                {resume.name}
-              </Button>
-            ))}
+            {status === "uploading" ? (
+              <div className="flex flex-col items-center gap-2">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <p className="text-sm text-muted-foreground">正在解析简历...</p>
+                <p className="text-xs text-muted-foreground">{fileName}</p>
+              </div>
+            ) : status === "error" ? (
+              <div className="flex flex-col items-center gap-2">
+                <AlertCircle className="h-8 w-8 text-destructive" />
+                <p className="text-sm font-medium text-destructive">解析失败</p>
+                <p className="text-xs text-muted-foreground">{errorMessage}</p>
+                <Button variant="outline" size="sm" className="mt-2" onClick={(e) => { e.stopPropagation(); handleReset(); }}>
+                  重新上传
+                </Button>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-2">
+                <FileUp className="h-8 w-8 text-muted-foreground" />
+                <p className="text-sm font-medium">
+                  拖拽简历文件到此处，或<span className="text-primary">点击选择文件</span>
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  支持 PDF、DOCX、TXT 格式，最大 10MB
+                </p>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        </TabsContent>
+
+        <TabsContent value="library">
+          <ResumeLibraryTable onSelect={handleLibrarySelect} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

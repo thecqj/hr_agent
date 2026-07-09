@@ -1,0 +1,53 @@
+智能简历投递系统（HR Agent）
+================================
+
+项目概述
+--------
+基于 LangGraph 多智能体架构的 AI 简历筛选与招聘管理系统，帮助招聘者自动化完成从
+简历收集、智能评估、候选人筛选到状态更新的完整招聘流程，并通过对话式 AI 助手降低
+操作门槛。
+
+技术栈
+------
+后端：FastAPI · Python 3.12 · SQLAlchemy 2.0 · Pydantic v2 · PostgreSQL · Alembic
+前端：React 19 · TypeScript · Vite · TanStack Query · Zustand · shadcn/ui
+AI  ：LangGraph（多智能体工作流） · DeepSeek API · pgvector
+其他：JWT 认证 · SSE 流式推送 · Docker
+
+核心架构与设计亮点
+------------------
+1.  LangGraph 多智能体工作流
+    - 对话 Agent（顶层入口）：自然语言意图识别（evaluate / help / unknown），
+      将用户指令路由到对应工作流
+    - 评估工作流：五阶段流水线（收集→评估→筛选→复评→落库），支持边界候选人
+      LLM 二次复评
+    - 基于 LangGraph Checkpointer + PostgreSQL 的工作流状态持久化，支持
+      断点续跑与任务恢复
+
+2.  简历智能评估引擎
+    - 多维度评分体系：技能匹配、经验相关性、学历达标、综合素质等维度，
+      每项附带权重与评分理由
+    - 结构化 JSONB 简历输入（零额外解析成本），配合 pgvector 语义检索能力
+    - 可解释性设计：每份简历输出详细评分报告，AI 辅助而非替代人工决策
+    - 自动重试与 Rate Limit 控制，保障 LLM 调用稳定性
+
+3.  对话式交互（Phase 2）
+    - 招聘者端浮动气泡入口，支持拖拽与自由缩放
+    - SSE 流式推送实时进度（thinking → intent → progress → result）
+    - 结构化评估结果卡片展示，一键确认/覆盖 AI 决策
+    - 拖拽吸附、响应式自适应、Portal 隔离事件冒泡
+
+4.  完整 CRUD + 权限体系
+    - 求职者/招聘者双角色权限系统，JWT 双令牌认证（access + refresh）
+    - 岗位发布、简历投递、状态流转全流程
+    - 基于 SQLAlchemy 2.0 Mapped 风格的 ORM 层，Alembic 数据库迁移
+    - 79 项集成测试覆盖 API 层
+
+成果亮点
+--------
+- 实现了从"收简历→AI 评估→筛选→人工确认→状态更新"的全链路自动化，
+  显著降低招聘重复劳动
+- 多智能体架构支持灵活扩展（审计 Agent、求职端 Agent、招聘分析 Agent）
+- 纯 HTTP 轮询 + SSE 流式推送组合，在保证架构简单性的同时提供实时反馈体验
+- 前端 Portal 隔离 + 比例定位算法，解决复杂 UI 组件的事件冲突与
+  窗口自适应问题

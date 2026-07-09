@@ -53,6 +53,18 @@ import ErrorState from "@/shared/ui/feedback/ErrorState";
 import { StatCard } from "@/shared/ui/StatCard";
 import { useBreadcrumb } from "@/shared/ui/layout/breadcrumb-context";
 
+/** 内联组件：检查是否有已完成评估任务，有则显示查看结果链接 */
+function EvaluationResultLink({ jobId }: { jobId: string }) {
+  const navigate = useNavigate();
+
+  return (
+    <DropdownMenuItem onClick={() => navigate(`/dashboard/evaluation/job/${jobId}`)}>
+      <FileText className="h-4 w-4 mr-2" />
+      查看评估结果
+    </DropdownMenuItem>
+  );
+}
+
 const WORK_TYPE_LABELS: Record<string, string> = {
   remote: "远程",
   onsite: "现场",
@@ -271,10 +283,13 @@ export default function JobDashboardPage() {
                         查看申请人
                       </DropdownMenuItem>
                       {job.status === "active" && (
-                        <DropdownMenuItem onClick={() => setCloseTarget(job)}>
-                          <Power className="h-4 w-4 mr-2" />
-                          关闭岗位
-                        </DropdownMenuItem>
+                        <>
+                          <EvaluationResultLink jobId={job.id} />
+                          <DropdownMenuItem onClick={() => setCloseTarget(job)}>
+                            <Power className="h-4 w-4 mr-2" />
+                            关闭岗位
+                          </DropdownMenuItem>
+                        </>
                       )}
                       <DropdownMenuItem
                         className="text-destructive"

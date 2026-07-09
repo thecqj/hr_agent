@@ -4,6 +4,7 @@ import { FileText, Download, Pencil, Trash2, Check, X, File as FileIcon } from "
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -17,6 +18,7 @@ import { useUpdateResumeMutation, useDeleteResumeMutation } from "@/features/res
 import { downloadResume } from "@/features/resumes/api/resumes";
 import { getApiErrorMessage } from "@/shared/api/error";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 interface ResumeCardProps {
   resume: ResumeListItem;
@@ -28,6 +30,13 @@ function getFileIcon(fileType: string) {
   return <FileIcon className="h-5 w-5 text-muted-foreground" />;
 }
 
+function getFileTypeBadge(fileType: string) {
+  if (fileType.includes("pdf")) return { label: "PDF", variant: "destructive" as const };
+  if (fileType.includes("word") || fileType.includes("docx")) return { label: "DOCX", variant: "default" as const };
+  if (fileType.includes("text") || fileType.includes("txt")) return { label: "TXT", variant: "secondary" as const };
+  return { label: "FILE", variant: "outline" as const };
+}
+
 function formatDate(dateStr: string) {
   const date = new Date(dateStr);
   return date.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" });
@@ -37,9 +46,12 @@ export default function ResumeCard({ resume }: ResumeCardProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(resume.name);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
 
   const updateMutation = useUpdateResumeMutation();
   const deleteMutation = useDeleteResumeMutation();
+
+  const fileBadge = getFileTypeBadge(resume.file_type);
 
   const handleSaveName = async () => {
     if (!editName.trim() || editName.trim() === resume.name) {
@@ -91,7 +103,14 @@ export default function ResumeCard({ resume }: ResumeCardProps) {
 
   return (
     <>
-      <Card className="hover:shadow-md transition-shadow">
+      <Card
+        className={cn(
+          "transition-all duration-200 border",
+          isHovered && "shadow-md scale-[1.02]",
+        )}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3">
@@ -122,12 +141,18 @@ export default function ResumeCard({ resume }: ResumeCardProps) {
                 <p className="text-xs text-muted-foreground truncate mt-0.5">{resume.file_name}</p>
               </div>
             </div>
+            <Badge variant={fileBadge.variant} className="text-[10px] px-1.5 py-0 h-5">
+              {fileBadge.label}
+            </Badge>
           </div>
         </CardHeader>
         <CardContent className="pb-3">
           <p className="text-xs text-muted-foreground">上传于 {formatDate(resume.created_at)}</p>
         </CardContent>
-        <CardFooter className="flex gap-1 pt-0">
+        <CardFooter className={cn(
+          "flex gap-1 pt-0 transition-opacity duration-200",
+          isHovered ? "opacity-100" : "opacity-70 lg:opacity-80",
+        )}>
           <Button variant="ghost" size="sm" onClick={() => setIsEditing(true)}>
             <Pencil className="h-3.5 w-3.5 mr-1" />
             重命名

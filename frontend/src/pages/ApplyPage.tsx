@@ -47,7 +47,7 @@ const workExpSchema = z.object({
   company: z.string().min(1, "公司必填"),
   position: z.string().min(1, "职位必填"),
   start_date: z.string().min(1, "开始日期必填"),
-  end_date: z.string().optional(),
+  end_date: z.string().optional().nullable(),
   description: z.string().min(1, "描述必填"),
 });
 
@@ -55,7 +55,7 @@ const projectSchema = z.object({
   name: z.string().min(1, "项目名称必填"),
   role: z.string().min(1, "角色必填"),
   start_date: z.string().min(1),
-  end_date: z.string().optional(),
+  end_date: z.string().optional().nullable(),
   description: z.string().min(1),
   technologies: z.array(z.string()),
 });
@@ -65,12 +65,12 @@ const educationSchema = z.object({
   major: z.string().min(1, "专业必填"),
   degree: z.string().min(1, "学位必填"),
   start_date: z.string().min(1),
-  end_date: z.string().optional(),
+  end_date: z.string().optional().nullable(),
 });
 
 const certificateSchema = z.object({
   name: z.string().min(1, "证书名称必填"),
-  date: z.string().optional(),
+  date: z.string().optional().nullable(),
 });
 
 const structuredResumeSchema = z.object({
@@ -335,7 +335,7 @@ export default function ApplyPage() {
                   </div>
                   <div className="space-y-2">
                     <Label>工作年限 <span className="text-destructive">*</span></Label>
-                    <Input type="number" {...form.register("work_experience_years", { valueAsNumber: true })} placeholder="0" />
+                    <Input type="number" {...form.register("work_experience_years", { valueAsNumber: true })} placeholder="请输入工作年限" />
                     {form.formState.errors.work_experience_years && (
                       <p className="text-xs text-destructive">{form.formState.errors.work_experience_years.message}</p>
                     )}

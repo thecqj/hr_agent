@@ -73,3 +73,52 @@ export async function confirmEvaluation(
   });
   return res.data;
 }
+
+// ── Agent Trigger / Tasks / Export ─────────────────────
+
+export interface TriggerEvaluationPayload {
+  mode: "new_only" | "all";
+}
+
+export interface TriggerEvaluationResponse {
+  task_id: string;
+  status: string;
+  total_count: number;
+}
+
+export interface JobTaskItem {
+  task_id: string;
+  status: string;
+  mode: string;
+  total_count: number;
+  evaluated_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JobEvaluationTasksResponse {
+  tasks: JobTaskItem[];
+}
+
+export async function triggerEvaluation(
+  jobId: string,
+  payload: TriggerEvaluationPayload = { mode: "new_only" },
+): Promise<TriggerEvaluationResponse> {
+  const res = await apiClient.post<TriggerEvaluationResponse>(
+    `/agent/evaluate/${jobId}`,
+    payload,
+  );
+  return res.data;
+}
+
+export async function getJobTasks(jobId: string): Promise<JobEvaluationTasksResponse> {
+  const res = await apiClient.get<JobEvaluationTasksResponse>(`/agent/tasks/${jobId}`);
+  return res.data;
+}
+
+export async function exportEvaluation(taskId: string): Promise<Blob> {
+  const res = await apiClient.get(`/agent/export/${taskId}`, {
+    responseType: "blob",
+  });
+  return res.data;
+}

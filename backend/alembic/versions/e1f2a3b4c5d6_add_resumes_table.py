@@ -32,7 +32,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime, nullable=False),
         sa.Column("updated_at", sa.DateTime, nullable=False),
     )
-    op.create_index("ix_resumes_user_id", "resumes", ["user_id"])
+    op.create_index("ix_resumes_user_id", "resumes", ["user_id"], if_not_exists=True)
 
 
 def downgrade() -> None:

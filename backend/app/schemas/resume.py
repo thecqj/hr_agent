@@ -2,14 +2,24 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, BeforeValidator, Field
+from typing_extensions import Annotated
 
 from app.schemas.application import StructuredResume
 
 
+def coerce_uuid(value: uuid.UUID | str) -> str:
+    """将 UUID 对象或字符串统一转为 str，解决 Pydantic v2 from_attributes 校验问题"""
+    return str(value)
+
+
+ResumeId = Annotated[str, BeforeValidator(coerce_uuid)]
+"""自动将 uuid.UUID → str 的字段类型"""
+
+
 class ResumeListItem(BaseModel):
     """简历列表项（不含文件数据和结构化数据）"""
-    id: str
+    id: ResumeId
     name: str
     file_name: Optional[str] = None
     file_type: Optional[str] = None
@@ -17,15 +27,11 @@ class ResumeListItem(BaseModel):
 
     model_config = {"from_attributes": True}
 
-    @field_serializer("id")
-    def serialize_uuid(self, value: uuid.UUID | str, _info: Any) -> str:
-        return str(value)
-
 
 class ResumeResponse(BaseModel):
     """简历详情响应"""
-    id: str
-    user_id: str
+    id: ResumeId
+    user_id: ResumeId
     name: str
     file_name: Optional[str] = None
     file_type: Optional[str] = None
@@ -35,10 +41,6 @@ class ResumeResponse(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
-
-    @field_serializer("id", "user_id")
-    def serialize_uuid(self, value: uuid.UUID | str, _info: Any) -> str:
-        return str(value)
 
 
 class ResumeListResponse(BaseModel):
@@ -55,6 +57,13 @@ class ResumeCreateRequest(BaseModel):
 class ResumeUpdateRequest(BaseModel):
     """更新简历请求"""
     name: str = Field(..., min_length=1, max_length=100, description="简历名称")
+
+
+class ResumeUpdateFullRequest(BaseModel):
+    """更新简历完整信息请求"""
+    name: str = Field(..., min_length=1, max_length=100, description="简历名称")
+    parsed_text: Optional[str] = Field(None, description="解析后的纯文本")
+    structured_data: Optional[dict[str, Any]] = Field(None, description="结构化简历数据")
 
 
 class ParseResumeResponse(BaseModel):

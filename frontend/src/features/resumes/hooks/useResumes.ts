@@ -6,11 +6,13 @@ import {
   getResumeDetail,
   getResumeList,
   parseResume,
+  updateResumeData,
   updateResumeName,
   uploadResume,
 } from "@/features/resumes/api/resumes";
 import { queryKeys } from "@/shared/constants/queryKeys";
 import { getApiErrorMessage } from "@/shared/api/error";
+import type { StructuredResume } from "@/features/applications/types/application";
 
 export function useResumeListQuery() {
   return useQuery({
@@ -75,6 +77,28 @@ export function useDeleteResumeMutation() {
     },
     onError: (error) => {
       toast.error(getApiErrorMessage(error, "删除失败"));
+    },
+  });
+}
+
+export function useUpdateResumeDataMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: { name: string; parsed_text?: string; structured_data?: StructuredResume };
+    }) => updateResumeData(id, data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.resumes.list });
+      queryClient.invalidateQueries({ queryKey: queryKeys.resumes.detail(variables.id) });
+      toast.success("简历已更新");
+    },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, "更新失败"));
     },
   });
 }

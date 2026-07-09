@@ -15,6 +15,7 @@ from app.schemas.resume import (
     ResumeListItem,
     ResumeListResponse,
     ResumeResponse,
+    ResumeUpdateFullRequest,
     ResumeUpdateRequest,
 )
 from app.schemas.application import StructuredResume
@@ -138,6 +139,30 @@ async def update_resume(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权修改此简历")
 
     resume.name = data.name
+    await db.commit()
+    await db.refresh(resume)
+    return ResumeResponse.model_validate(resume)
+
+
+@router.put("/{resume_id}/data", response_model=ResumeResponse, summary="更新简历完整信息（含结构化数据）")
+async def update_resume_data(
+    resume_id: str,
+    data: ResumeUpdateFullRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_required_user),
+) -> ResumeResponse:
+    """更新简历的完整信息，包括结构化数据和解析文本。"""
+    resume = await db.get(Resume, resume_id)
+    if not resume:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="简历不存在")
+    if resume.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权修改此简历")
+
+    resume.name = data.name
+    if data.parsed_text is not None:
+        resume.parsed_text = data.parsed_text
+    if data.structured_data is not None:
+        resume.structured_data = data.structured_data
     await db.commit()
     await db.refresh(resume)
     return ResumeResponse.model_validate(resume)

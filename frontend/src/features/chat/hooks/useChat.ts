@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from "react";
 
-import type { ChatMessage, ProgressInfo, ToolStatusInfo } from "@/features/chat/types/chat";
-import { sendChatMessage, closeSession as apiCloseSession, getSession, getHistory } from "@/features/chat/api/chat";
+import type { ChatMessage, EvaluationCompleteInfo, ProgressInfo, ToolStatusInfo } from "@/features/chat/types/chat";
+import { sendChatMessage, closeSession as apiCloseSession, clearSession as apiClearSession, getSession, getHistory } from "@/features/chat/api/chat";
 import { useAuthStore } from "@/features/auth/store/authStore";
 
 const STORAGE_KEY_PREFIX = "chat-session-id";
@@ -66,6 +66,7 @@ export function useChat() {
     let assistantContent = "";
     let assistantToolStatus: ToolStatusInfo | undefined;
     let assistantProgress: ProgressInfo | undefined;
+    let assistantEvalComplete: EvaluationCompleteInfo | undefined;
 
     const controller = sendChatMessage(
       text,
@@ -156,11 +157,25 @@ export function useChat() {
             break;
           }
 
+          case "evaluation_complete": {
+            assistantEvalComplete = {
+              task_id: data.task_id as string,
+              job_title: data.job_title as string,
+              result_page_url: data.result_page_url as string,
+              total_count: data.total_count as number,
+              recommend_count: data.recommend_count as number,
+              reject_count: data.reject_count as number,
+            };
+            // Don't update the message here — wait for text_delta/result to finalize
+            break;
+          }
+
           case "result": {
             const replyMessage = (data.reply_message as string) || "";
             if (replyMessage) {
               assistantContent = replyMessage;
             }
+            const evalInfo = assistantEvalComplete;
             setMessages((prev) => {
               const updated = [...prev];
               const lastIdx = updated.length - 1;
@@ -170,12 +185,14 @@ export function useChat() {
                   content: assistantContent,
                   toolStatus: undefined,
                   progress: undefined,
+                  evaluationComplete: evalInfo,
                   timestamp: Date.now(),
                 };
               } else {
                 updated.push({
                   role: "assistant",
                   content: assistantContent,
+                  evaluationComplete: evalInfo,
                   timestamp: Date.now(),
                 });
               }
@@ -239,6 +256,19 @@ export function useChat() {
     setMessages([]);
   }, []);
 
+  const clearSessionMessages = useCallback(async () => {
+    if (sessionId) {
+      try {
+        await apiClearSession(sessionId);
+      } catch {
+        // Non-blocking
+      }
+    }
+    // Keep the same session_id for new conversation
+    setMessages([]);
+    setIsProcessing(false);
+  }, [sessionId]);
+
   const closeSession = useCallback(async () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -291,6 +321,7 @@ export function useChat() {
     sendMessage,
     disconnect,
     clearMessages,
+    clearSessionMessages,
     closeSession,
     loadHistory,
   };

@@ -33,8 +33,16 @@ class EvaluationTask(Base, TimestampMixin):
         index=True,
     )
     status: Mapped[EvalTaskStatus] = mapped_column(
+        "status",
         Enum(EvalTaskStatus),
         default=EvalTaskStatus.PENDING,
+        quote=True,
+    )
+    mode: Mapped[str] = mapped_column(
+        "mode",
+        default="new_only",
+        comment="评估模式: new_only=仅新投递, all=重新评估全部",
+        quote=True,
     )
     total_count: Mapped[int] = mapped_column(Integer, default=0)
     evaluated_count: Mapped[int] = mapped_column(Integer, default=0)
