@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { useFieldArray, useForm, Controller } from "react-hook-form";
+import ResumeUploader from "@/features/resumes/components/ResumeUploader";
+import type { ParseResumeResponse } from "@/features/resumes/api/resumes";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useNavigate, useParams } from "react-router-dom";
@@ -45,7 +47,7 @@ const workExpSchema = z.object({
   company: z.string().min(1, "公司必填"),
   position: z.string().min(1, "职位必填"),
   start_date: z.string().min(1, "开始日期必填"),
-  end_date: z.string().optional(),
+  end_date: z.string().optional().nullable(),
   description: z.string().min(1, "描述必填"),
 });
 
@@ -53,7 +55,7 @@ const projectSchema = z.object({
   name: z.string().min(1, "项目名称必填"),
   role: z.string().min(1, "角色必填"),
   start_date: z.string().min(1),
-  end_date: z.string().optional(),
+  end_date: z.string().optional().nullable(),
   description: z.string().min(1),
   technologies: z.array(z.string()),
 });
@@ -63,12 +65,12 @@ const educationSchema = z.object({
   major: z.string().min(1, "专业必填"),
   degree: z.string().min(1, "学位必填"),
   start_date: z.string().min(1),
-  end_date: z.string().optional(),
+  end_date: z.string().optional().nullable(),
 });
 
 const certificateSchema = z.object({
   name: z.string().min(1, "证书名称必填"),
-  date: z.string().optional(),
+  date: z.string().optional().nullable(),
 });
 
 const structuredResumeSchema = z.object({
@@ -93,6 +95,7 @@ export default function ApplyPage() {
   const [currentStep, setCurrentStep] = useState(0);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [resumeParsed, setResumeParsed] = useState(false);
 
   const createApplicationMutation = useCreateApplicationMutation();
   const { data: job } = useJobDetailQuery(jobId);
@@ -279,6 +282,38 @@ export default function ApplyPage() {
         </div>
       )}
 
+      {/* Resume uploader */}
+      <ResumeUploader
+        onParsed={(data: ParseResumeResponse) => {
+          setResumeParsed(true);
+          form.reset({
+            name: data.structured_data.name || "",
+            work_experience_years: data.structured_data.work_experience_years || 0,
+            education_level: data.structured_data.education_level || "",
+            contact: {
+              phone: data.structured_data.contact?.phone || "",
+              email: data.structured_data.contact?.email || "",
+              wechat: data.structured_data.contact?.wechat || "",
+              other: data.structured_data.contact?.other || "",
+            },
+            work_experience: data.structured_data.work_experience || [],
+            project_experience: data.structured_data.project_experience || [],
+            education: data.structured_data.education || [],
+            certificates: data.structured_data.certificates || [],
+            skills: data.structured_data.skills || [],
+            self_evaluation: data.structured_data.self_evaluation || "",
+          });
+          toast.success("简历已自动填充");
+        }}
+        onReset={() => setResumeParsed(false)}
+      />
+      {resumeParsed && (
+        <p className="text-xs text-green-600 dark:text-green-400 text-center -mt-2 mb-2">
+          已自动填充表单，请检查并补充完整后提交
+        </p>
+      )}
+      <Separator className="my-4" />
+
       {/* Step indicator */}
       <StepForm steps={STEPS} currentStep={currentStep} />
 
@@ -300,7 +335,7 @@ export default function ApplyPage() {
                   </div>
                   <div className="space-y-2">
                     <Label>工作年限 <span className="text-destructive">*</span></Label>
-                    <Input type="number" {...form.register("work_experience_years", { valueAsNumber: true })} placeholder="0" />
+                    <Input type="number" {...form.register("work_experience_years", { valueAsNumber: true })} placeholder="请输入工作年限" />
                     {form.formState.errors.work_experience_years && (
                       <p className="text-xs text-destructive">{form.formState.errors.work_experience_years.message}</p>
                     )}

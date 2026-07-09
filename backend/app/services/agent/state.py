@@ -13,6 +13,7 @@ class EvaluationState(TypedDict, total=False):
     job_id: str
     triggered_by: str
     task_id: str
+    mode: str  # "new_only" | "all"
 
     # 收集阶段产出
     job_info: dict[str, object]  # 岗位信息

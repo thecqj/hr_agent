@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import { Briefcase } from "lucide-react";
+import { Briefcase, User } from "lucide-react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -16,6 +16,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
@@ -81,6 +82,8 @@ function SeekerLayoutInner() {
                   <DropdownMenuItem className="text-muted-foreground text-xs cursor-default">
                     {user.name}
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate("/profile")}>个人中心</DropdownMenuItem>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={logout}>退出登录</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

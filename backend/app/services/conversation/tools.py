@@ -560,15 +560,15 @@ async def trigger_evaluation(
                 f"(task_id={existing_task.id}, status={existing_task.status.value})。"
             )
 
-        # Count pending applications
+        # Count unevaluated applications (ai_decision IS NULL)
         count_stmt = select(func.count()).select_from(Application).where(
             Application.job_id == job.id,
-            Application.status == ApplicationStatus.PENDING,
+            Application.ai_decision.is_(None),
         )
         pending_count: int = (await db.execute(count_stmt)).scalar() or 0
 
         if pending_count == 0:
-            return f"岗位「{job.title}」暂无待处理的简历，无法触发评估。"
+            return f"岗位「{job.title}」暂无待处理的简历。"
 
         # Create evaluation task record
         task_id = uuid.uuid4()
@@ -635,6 +635,16 @@ async def trigger_evaluation(
             cutoff_score = summary.get("cutoff_score", 0)
             evaluation_details = summary.get("evaluation_details", [])
 
+            # Emit structured event so frontend can render the report link reliably
+            await adispatch_custom_event("evaluation_complete", {
+                "task_id": task_id_str,
+                "job_title": job_title_cache,
+                "result_page_url": f"/dashboard/evaluation/{task_id_str}",
+                "total_count": final_task.total_count,
+                "recommend_count": recommend_count,
+                "reject_count": reject_count,
+            })
+
             lines = [
                 f"✅ 岗位「{job_title_cache}」评估完成！",
                 f"共 {final_task.total_count} 份简历，推荐 {recommend_count} 人，不推荐 {reject_count} 人。",
@@ -655,6 +665,7 @@ async def trigger_evaluation(
 
             lines.append("")
             lines.append(f"任务 ID: {task_id_str}")
+            lines.append(f"📊 [查看完整评估报告](/dashboard/evaluation/{task_id_str})")
             lines.append("需调用 confirm_evaluation 确认结果后才会变更候选人状态。")
 
             return "\n".join(lines)

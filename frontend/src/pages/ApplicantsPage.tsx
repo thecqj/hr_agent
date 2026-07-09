@@ -50,7 +50,7 @@ const STATUS_CATEGORIES = [
   { key: "hired", label: "已录用" },
 ];
 
-function formatDate(dateStr?: string) {
+function formatDate(dateStr?: string | null) {
   if (!dateStr) return "至今";
   return new Date(dateStr).toLocaleDateString();
 }

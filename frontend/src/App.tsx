@@ -6,10 +6,13 @@ import ApplyPage from "@/pages/ApplyPage";
 import EvaluationResultPage from "@/pages/EvaluationResultPage";
 import JobDashboardPage from "@/pages/JobDashboardPage";
 import JobDetailPage from "@/pages/JobDetailPage";
+import JobEvaluationPage from "@/pages/JobEvaluationPage";
 import JobMarketPage from "@/pages/JobMarketPage";
 import LoginPage from "@/pages/LoginPage";
 import RegisterPage from "@/pages/RegisterPage";
 import MyApplicationsPage from "@/pages/MyApplicationsPage";
+import ProfilePage from "@/pages/ProfilePage";
+import CreateResumePage from "@/pages/CreateResumePage";
 import PostJobPage from "@/pages/PostJobPage";
 import RecruiterLayout from "@/shared/ui/layout/RecruiterLayout";
 import SeekerLayout from "@/shared/ui/layout/SeekerLayout";
@@ -60,6 +63,22 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute role="job_seeker">
+                <ProfilePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/profile/create"
+            element={
+              <ProtectedRoute role="job_seeker">
+                <CreateResumePage />
+              </ProtectedRoute>
+            }
+          />
         </Route>
 
         {/* Recruiter routes — sidebar layout */}
@@ -85,6 +104,14 @@ export default function App() {
             element={
               <ProtectedRoute role="recruiter">
                 <ApplicantsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dashboard/evaluation/job/:jobId"
+            element={
+              <ProtectedRoute role="recruiter">
+                <JobEvaluationPage />
               </ProtectedRoute>
             }
           />

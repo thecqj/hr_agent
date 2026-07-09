@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Minus, X } from "lucide-react";
+import { Eraser, Minus, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -33,6 +33,7 @@ export function ChatWindow({
     bubbleSide,
   );
   const [showCloseDialog, setShowCloseDialog] = useState(false);
+  const [showClearDialog, setShowClearDialog] = useState(false);
 
   const handleCloseClick = () => {
     setShowCloseDialog(true);
@@ -45,6 +46,15 @@ export function ChatWindow({
 
   const handleCancelClose = () => {
     setShowCloseDialog(false);
+  };
+
+  const handleClear = async () => {
+    setShowClearDialog(false);
+    await chat.clearSessionMessages();
+  };
+
+  const handleCancelClear = () => {
+    setShowClearDialog(false);
   };
 
   return (
@@ -75,6 +85,20 @@ export function ChatWindow({
         >
           <h3 className="font-semibold text-sm select-none">HR 智能助手</h3>
           <div className="flex items-center gap-1">
+            {/* Clear conversation button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowClearDialog(true);
+              }}
+              title="清空对话"
+            >
+              <Eraser className="h-4 w-4" />
+            </Button>
             {/* Minimize button */}
             <Button
               variant="ghost"
@@ -153,6 +177,26 @@ export function ChatWindow({
             </Button>
             <Button variant="destructive" onClick={handleConfirmClose}>
               确定关闭
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Clear conversation confirmation dialog */}
+      <Dialog open={showClearDialog} onOpenChange={setShowClearDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>清空对话</DialogTitle>
+            <DialogDescription>
+              清空后将删除当前会话的所有消息记录，但会话仍可继续使用。确定清空吗？
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={handleCancelClear}>
+              取消
+            </Button>
+            <Button variant="destructive" onClick={handleClear}>
+              确定清空
             </Button>
           </DialogFooter>
         </DialogContent>

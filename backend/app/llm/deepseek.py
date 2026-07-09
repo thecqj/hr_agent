@@ -147,3 +147,15 @@ class DeepSeekProvider(BaseLLMProvider):
             if existing_summary:
                 return existing_summary
             return ""
+
+    async def parse_resume(self, raw_text: str) -> dict[str, object]:
+        """解析原始简历文本为结构化数据"""
+        from app.services.agent.prompts import PARSE_RESUME_SYSTEM_PROMPT
+
+        system_prompt = PARSE_RESUME_SYSTEM_PROMPT
+        user_prompt = raw_text
+
+        raw_result = await self._call_chat(
+            system_prompt, user_prompt, retries=settings.LLM_EVALUATION_RETRIES
+        )
+        return raw_result

@@ -103,6 +103,26 @@ export async function closeSession(sessionId: string): Promise<void> {
 }
 
 /**
+ * Clear a chat session — delete all messages and conversation record.
+ */
+export async function clearSession(sessionId: string): Promise<void> {
+  const token = useAuthStore.getState().token;
+
+  const response = await fetch(`${API_BASE}/chat/clear`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: token ? `Bearer ${token}` : "",
+    },
+    body: JSON.stringify({ session_id: sessionId }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+}
+
+/**
  * Query the current active session for the user.
  * If session_id is provided, checks that specific session's status.
  * Otherwise, returns the most recent active session.

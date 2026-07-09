@@ -5,6 +5,15 @@ export interface ToolStatusInfo {
   status: "started" | "ended";
 }
 
+export interface EvaluationCompleteInfo {
+  task_id: string;
+  job_title: string;
+  result_page_url: string;
+  total_count: number;
+  recommend_count: number;
+  reject_count: number;
+}
+
 // ── Message ──────────────────────────────────────────────
 
 export interface ChatMessage {
@@ -14,6 +23,8 @@ export interface ChatMessage {
   toolStatus?: ToolStatusInfo;
   /** Progress indicator for evaluation tasks */
   progress?: ProgressInfo;
+  /** Structured evaluation completion data */
+  evaluationComplete?: EvaluationCompleteInfo;
   timestamp: number;
 }
 

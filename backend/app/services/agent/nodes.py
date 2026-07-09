@@ -1,7 +1,7 @@
 """LangGraph 评估工作流节点实现"""
 
 import asyncio
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from typing import Any, cast
 
 from sqlalchemy import select
@@ -39,9 +39,10 @@ def _get_db() -> AsyncSession:
 
 
 async def collect_node(state: EvaluationState) -> dict[str, Any]:
-    """收集阶段：获取岗位下所有 pending 申请"""
+    """收集阶段：获取岗位下待评估的申请"""
     job_id = state.get("job_id", "")
     task_id = state.get("task_id", "")
+    mode = state.get("mode", "new_only")
 
     errors: list[str] = list(state.get("errors", []))
 
@@ -66,15 +67,17 @@ async def collect_node(state: EvaluationState) -> dict[str, Any]:
             errors.append("岗位不存在")
             return {"errors": errors}
 
-        # 查询 pending 申请
+        # 查询申请 — 根据 mode 决定范围
         stmt = (
             select(Application)
-            .where(
-                Application.job_id == job_id,
-                Application.status == ApplicationStatus.PENDING,
-            )
+            .where(Application.job_id == job_id)
             .options(selectinload(Application.applicant))
         )
+        if mode == "new_only":
+            # 仅收集未被 AI 评估过的申请（ai_decision IS NULL）
+            stmt = stmt.where(Application.ai_decision.is_(None))
+        # mode == "all": 收集所有申请
+
         applications = list((await db.execute(stmt)).scalars().all())
 
         if not applications:
@@ -83,6 +86,17 @@ async def collect_node(state: EvaluationState) -> dict[str, Any]:
             await db.commit()
             errors.append("该岗位没有待评估的申请")
             return {"errors": errors}
+
+        # 如果是重新评估全部，重置 ai_* 字段
+        if mode == "all":
+            now = datetime.now(timezone.utc)
+            for app in applications:
+                app.ai_score = None
+                app.ai_decision = None
+                app.ai_evaluation = None
+                app.ai_decision_reason = None
+                app.ai_evaluated_at = None
+            await db.commit()
 
         # 构建岗位信息
         job_info: dict[str, Any] = {
@@ -364,7 +378,7 @@ async def save_draft_node(state: EvaluationState) -> dict[str, Any]:
     # 写入每个 Application 的 ai_* 字段
     recommend_count = 0
     reject_count = 0
-    now = datetime.now(UTC)
+    now = datetime.now(timezone.utc)
 
     async with _get_db() as db:
         for app_id, decision in decision_map.items():

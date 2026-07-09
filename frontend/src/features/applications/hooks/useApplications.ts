@@ -5,10 +5,15 @@ import {
   createApplication,
   getApplicationsByJob,
   getEvaluationTask,
+  getJobTasks,
   getMyApplications,
+  triggerEvaluation,
   updateApplicationStatus,
 } from "@/features/applications/api/applications";
-import type { ConfirmDecision } from "@/features/applications/api/applications";
+import type {
+  ConfirmDecision,
+  TriggerEvaluationPayload,
+} from "@/features/applications/api/applications";
 import type { CreateApplicationPayload } from "@/features/applications/types/application";
 import type { ApplicationStatus } from "@/shared/constants/applicationStatus";
 import { queryKeys } from "@/shared/constants/queryKeys";
@@ -88,5 +93,30 @@ export function useConfirmEvaluationMutation() {
       queryClient.invalidateQueries({ queryKey: ["evaluation"] });
       queryClient.invalidateQueries({ queryKey: ["applications"] });
     },
+  });
+}
+
+export function useTriggerEvaluationMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      jobId,
+      payload,
+    }: {
+      jobId: string;
+      payload?: TriggerEvaluationPayload;
+    }) => triggerEvaluation(jobId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["agent", "tasks"] });
+    },
+  });
+}
+
+export function useEvaluationTasksQuery(jobId?: string) {
+  return useQuery({
+    queryKey: ["agent", "tasks", jobId],
+    queryFn: () => getJobTasks(jobId!),
+    enabled: Boolean(jobId),
   });
 }

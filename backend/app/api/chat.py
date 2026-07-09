@@ -14,7 +14,7 @@ from app.api.deps import get_required_user
 from app.database import async_session, get_checkpointer
 from app.models.conversation import Conversation
 from app.models.user import User, UserRole
-from app.schemas.chat import ChatRequest, SessionCloseRequest, SessionResponse, HistoryResponse
+from app.schemas.chat import ChatRequest, ClearSessionRequest, ClearSessionResponse, SessionCloseRequest, SessionResponse, HistoryResponse
 
 router = APIRouter(prefix="/chat", tags=["对话助手"])
 
@@ -81,6 +81,41 @@ async def close_session(
         # 保留 conversation 记录（用于历史查询）
 
     return {"message": "会话已关闭"}
+
+
+@router.post(
+    "/clear",
+    summary="清空对话记录",
+    response_model=ClearSessionResponse,
+)
+async def clear_session(
+    data: ClearSessionRequest,
+    current_user: User = Depends(get_required_user),
+) -> ClearSessionResponse:
+    """清空指定会话的短期对话内容 — 删除 LangGraph checkpoint 消息和 Conversation 记录"""
+    checkpointer = get_checkpointer()
+
+    # 1. Delete LangGraph checkpoint data (messages, state)
+    try:
+        await checkpointer.adelete_thread(data.session_id)
+    except Exception:
+        # thread may not exist — non-fatal
+        pass
+
+    # 2. Delete Conversation record
+    async with async_session() as db:
+        stmt = select(Conversation).where(
+            Conversation.session_id == data.session_id,
+            Conversation.user_id == current_user.id,
+        )
+        result = await db.execute(stmt)
+        conversation = result.scalar_one_or_none()
+
+        if conversation:
+            await db.delete(conversation)
+            await db.commit()
+
+    return ClearSessionResponse(message="对话记录已清空")
 
 
 @router.get(
@@ -303,6 +338,8 @@ async def _run_conversation_stream(
                 event_data = event.get("data", {})
                 if event_name == "progress":
                     yield f"event: progress\ndata: {json.dumps(event_data, ensure_ascii=False)}\n\n"
+                elif event_name == "evaluation_complete":
+                    yield f"event: evaluation_complete\ndata: {json.dumps(event_data, ensure_ascii=False)}\n\n"
 
         # Get final state for result event and summary update
         state_result = await graph.aget_state(config)
